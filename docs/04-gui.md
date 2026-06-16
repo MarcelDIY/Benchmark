@@ -3,23 +3,28 @@
 `benchmark_gui.py` ist ein grafisches Frontend (PySide6/Qt) fuer `bench.py`. Es
 benutzt **dieselbe Mess-Logik** wie das CLI — die Zahlen sind identisch.
 
+Dark-Dashboard im Tokyo-Night-Stil; die Diagramme sind SVG (`svgcharts.py`), per
+`QSvgRenderer` als scharfes Bild gerendert. Screenshots: siehe `assets/screenshots/`.
+
 ## Was die GUI kann
-- **Ollama-Host** eingeben (Standard `http://localhost:11434`).
-- **Modelle suchen** → fragt Ollama ab, zeigt an, ob es erreichbar ist, und
-  fuellt das Modell-Dropdown mit den lokal installierten Modellen.
-- **Ein Modell** auswaehlen, **Modus** (gpu/cpu), **Wiederholungen**, **Warmup**
-  und ein **Label** (Maschinenname) setzen.
-- **Test starten** → laeuft alle Buero-Aufgaben durch, ohne die Oberflaeche
-  einzufrieren (eigener Thread). Live-Fortschritt + Log.
-- **Abbrechen** jederzeit (kooperativ, reagiert auch mitten in der Generierung).
-- **Ergebnistabelle** je Task (TTFT, Prefill, Decode, Decode p95, Qualitaet) plus
-  eine fette **GESAMT**-Zeile ueber alle Tasks.
-- **Tatsaechliche GPU/CPU-Verteilung** nach dem Lauf (aus Ollama `/api/ps`): zeigt,
-  ob das Modell komplett auf GPU/CPU lief oder hybrid (z. B. „85% GPU / 15% CPU").
-- **„Aufgaben & Infos"**-Button: erklaert die Kennzahlen/Begriffe und zeigt alle
-  Aufgaben inkl. vollem Prompt-Inhalt.
-- **Export** als CSV, Markdown oder JSON (CSV/MD sind byte-identisch zum CLI).
-- Eigenes **App-Icon** (`assets/icon.png`, generierbar via `assets/make_icon.py`).
+- **Ollama-Host** eingeben (Standard `http://localhost:11434`, auch Rechner im Netz).
+- **Modelle suchen** (synchroner Scan) → fuellt das Dropdown mit den installierten Modellen.
+- **Modell**, **Modus** (gpu/cpu), **Wiederholungen**, **Warmup**, **Label** setzen,
+  **Test starten** (eigener Thread, GUI friert nicht ein), jederzeit **Abbrechen**
+  (kooperativ, reagiert auch mitten in der Generierung).
+- Reiter **„Aktueller Lauf":** vier **KPI-Kacheln**, Ergebnis-**Tabelle** je Aufgabe
+  (+ fette **GESAMT**-Zeile), **GPU/CPU-Ring** (Modell 100 % verteilt auf GPU+CPU,
+  aus `/api/ps`) und **Balken je Lauf** (Aufgabe in der Tabelle waehlen; Metrik
+  umschaltbar) inkl. **Warmup-Balken** (Kaltstart) und Durchschnittslinie.
+- Reiter **„Vergleich":** mehrere Laeufe verschiedener Modelle in EINER Sitzung
+  sammeln und gegenueberstellen (Balken + Tabelle). Kennzahl umschaltbar:
+  Decode, Prefill, TTFT, **Decode p95, Qualitaet, Kaltstart, Speicherbedarf,
+  Gesamtdauer**, GPU-Anteil. **„Cloud-Referenz"**-Knopf blendet Claude
+  Opus/Sonnet/Haiku als Richtwert ein (aus `reference_cloud.json`).
+- **Hilfe-Menue** (oben): Bedienung, Begriffe, Aufgaben (inkl. vollem Prompt),
+  Lizenz, Ueber.
+- **Export** als CSV, Markdown oder JSON (CSV/MD byte-identisch zum CLI).
+- Eigenes **Tacho-Icon** + Pfeil-Assets (`assets/make_icon.py`).
 
 > Voraussetzung: ein laufendes **Ollama**. Es wird bewusst **nicht** mitgebuendelt
 > (Go-Binary + mehrere GB Modelle). Die App ist „standalone" im Sinne von
@@ -57,9 +62,13 @@ Oder direkt: `pyinstaller --noconfirm BenchGUI.spec`
 `console=False` voruebergehend auf `True` setzen und neu bauen.
 
 ## Architektur (kurz)
-- `bench.py` bleibt der Messkern (reine stdlib). Einzige Anpassung fuer die GUI:
-  `run_once(..., should_cancel=None)` — optionaler Abbruch-Callback, CLI unveraendert.
+- `bench.py` bleibt der Messkern (reine stdlib). GUI-Anpassungen, rueckwaerts-
+  kompatibel: `run_once(..., should_cancel=None, on_response=None)` (kooperativer
+  Abbruch, auch waehrend Modell-Load), `http_json/installed_models(timeout=…)`.
 - Host-Wechsel zur Laufzeit: die GUI setzt `bench.OLLAMA = host` (wird in `_req`
   bei jedem Request gelesen).
-- Threading: QObject-Worker via `moveToThread`; der Worker fasst nie ein Widget
-  an, alles laeuft ueber Signale. Abbruch ueber ein `threading.Event`.
+- **Scan synchron** (kurzer HTTP-Call) – kein Thread. Der **Benchmark** laeuft im
+  QObject-Worker via `moveToThread`; der Worker fasst nie ein Widget an, alles ueber
+  Signale. Abbruch ueber `threading.Event` + Schliessen der offenen Antwort.
+- Wichtig (Lehre): Worker/Thread-Referenzen erst an `thread.finished` loesen, NICHT
+  im Signal-Slot – sonst Heap-Korruption auf xcb. Siehe `_clear_threads`.

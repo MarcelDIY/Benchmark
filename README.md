@@ -1,83 +1,194 @@
-# Lokaler Büro-LLM-Hardware-Benchmark
+<div align="center">
 
-Reproduzierbarer Benchmark, der dieselben lokalen KI-Modelle auf verschiedener
-Hardware laufen lässt, um eine **Kaufentscheidung** zu treffen:
+<img src="assets/icon.png" width="116" alt="Lokaler LLM-Benchmark">
 
-> **16-GB-GPU-PC**  vs.  **Apple-Silicon-Mac (Unified Memory)**  vs.  **CPU + viel RAM**
+# ⚡ Lokaler LLM-Benchmark
 
-Schwerpunkt der Aufgaben: **Büroarbeit** (Zusammenfassen, E-Mails/Texte, Übersetzen,
-Extraktion, Dokument-Q&A) plus ein Querschnitt zur Qualitätskontrolle.
+**Wie schnell läuft lokale KI auf _deiner_ Hardware – und wie weit bist du vom Frontier-Modell weg?**
 
-## Die eine zentrale Erkenntnis
-**Genauigkeit hängt am Modell + Quantisierung, NICHT an der Hardware.** Dasselbe
-Modell im selben Quant-Format liefert auf CUDA (GPU), Metal und MLX (Mac) praktisch
-identische Qualität. Damit reduziert sich die Hardware-Frage auf:
-**Geschwindigkeit + Preis + Speicherkapazität + Energie.**
+Miss **Tempo, Speicher und Qualität** lokaler Sprachmodelle über [Ollama](https://ollama.com) –
+als schickes Dashboard, mit **Modell-Vergleich** und **Cloud-Referenz**.
+Hilft bei der Kaufentscheidung **16-GB-GPU-PC** · **Apple-Silicon-Mac** · **CPU + viel RAM**.
 
-Die eigentliche Frage ist, in welchem **Regime** deine Arbeit liegt:
-- Modelle **bis ~14B** → die 16-GB-GPU gewinnt (mehr Bandbreite pro Euro).
-- Modelle **30B–70B** → nur der Mac (oder ein Rechner mit viel RAM) kann sie laden;
-  die 16-GB-GPU fällt in CPU-Offload und kollabiert ~10×.
+![100% lokal](https://img.shields.io/badge/100%25-lokal-9ece6a?style=flat-square&labelColor=1a1b26)
+![Kosten](https://img.shields.io/badge/Kosten-0%20%E2%82%AC-9ece6a?style=flat-square&labelColor=1a1b26)
+![API-Key](https://img.shields.io/badge/API--Key-keiner-7aa2f7?style=flat-square&labelColor=1a1b26)
+![GUI](https://img.shields.io/badge/GUI-PySide6%20·%20Qt-bb9af7?style=flat-square&labelColor=1a1b26)
+![Backend](https://img.shields.io/badge/Backend-Ollama-7dcfff?style=flat-square&labelColor=1a1b26)
+![Standalone](https://img.shields.io/badge/Standalone-Win%20·%20macOS%20·%20Linux-e0af68?style=flat-square&labelColor=1a1b26)
+![Theme](https://img.shields.io/badge/Theme-Tokyo%20Night-73daca?style=flat-square&labelColor=1a1b26)
+![Lizenz](https://img.shields.io/badge/Lizenz-MIT-565f89?style=flat-square&labelColor=1a1b26)
 
-Details: siehe [`docs/01-konzept.md`](docs/01-konzept.md).
+</div>
 
 ---
 
-## Schnellstart
+<div align="center">
 
-**Voraussetzungen (jedes Gerät):** [Ollama](https://ollama.com/download) + Python 3.9+
-(keine weiteren Pakete nötig — nur Standardbibliothek).
+![Programmoberfläche](assets/screenshots/overview.png)
 
-```bash
-# Windows-PC (CPU + GPU)
-python bench.py --label laptop-i9 --pull
+</div>
 
-# Mac (nur Metal/GPU sinnvoll)
-python3 bench.py --label mac-m4-pro-48gb --modes gpu --pull
+## Was ist das?
 
-# Grosser Rechner im Netz (von hier aus messen, ohne dort etwas zu installieren):
-#   Windows:  $env:OLLAMA_HOST="http://<ip>:11434"; python bench.py --label bigpc-rtx --modes gpu
-#   Linux/Mac: OLLAMA_HOST=http://<ip>:11434 python3 bench.py --label bigpc-rtx --modes gpu
+Lokale KI ist gratis und privat – aber **wie schnell** ist sie auf genau deinem Rechner?
+Dieses Programm lässt dieselben **fünf Büro-Aufgaben** (Zusammenfassen, E-Mail, Übersetzen,
+JSON-Extraktion, Dokument-Frage) durch ein lokales Modell laufen und misst reproduzierbar
+**Prefill, Decode, Time-to-First-Token, Speicher-Verteilung und Qualität**.
 
-# Nur Setup prüfen, nichts ausführen
-python bench.py --check
+> **Die zentrale Erkenntnis:** Genauigkeit hängt am **Modell + Quantisierung**, *nicht* an der
+> Hardware. Damit reduziert sich die Hardware-Frage auf **Tempo + Preis + Speicher + Energie** –
+> und genau die misst dieses Tool. So findest du heraus, ob ein **16-GB-GPU-PC**, ein
+> **Apple-Silicon-Mac** oder schlicht **CPU + viel RAM** für deine Arbeit reicht.
+
+Kern ist ein abhängigkeitsfreier Messläufer (`bench.py`, reine Python-Standardbibliothek);
+darüber sitzt ein modernes **PySide6-Dashboard** im Tokyo-Night-Stil.
+
+## ✨ Highlights
+
+| | Feature | Worum es geht |
+|---|---|---|
+| **1** | **Schickes Dashboard** | KPI-Kacheln, Ringdiagramm (GPU/CPU-Verteilung) und Balken pro Lauf – als gestochen scharfe SVG-Grafiken. |
+| **2** | **Modelle vergleichen** | Mehrere Modelle in einer Sitzung testen und im Reiter *Vergleich* nebeneinanderstellen – nach Decode, Prefill, TTFT, p95, Qualität, Kaltstart, Speicher, Dauer. |
+| **3** | **Cloud-Referenz** | Auf Knopfdruck Claude **Opus/Sonnet/Haiku** als Richtwert einblenden – damit du siehst, *wie weit du weg bist*. Ohne API-Key, ohne Kosten. |
+| **4** | **Tatsächliche GPU/CPU-Verteilung** | Der Ring zeigt, wie viel des Modells real im VRAM lag (z. B. *85 % GPU / 15 % CPU*). |
+| **5** | **Warmup sichtbar** | Der Kaltstart (Modell-Ladezeit) erscheint als eigener Balken – man sieht sofort, wie viel langsamer der erste Lauf ist. |
+| **6** | **Standalone & lokal** | Reine stdlib-Messung, ein Doppelklick-Programm baubar (Win/macOS/Linux). Ollama bleibt die einzige externe Voraussetzung. |
+
+## 📊 Das Dashboard
+
+Pro Lauf: vier **KPI-Kacheln** für den Schnellüberblick, links die **Tabelle** je Aufgabe,
+rechts der **GPU/CPU-Ring** und – für die in der Tabelle gewählte Aufgabe – die **Balken je Lauf**
+mit Durchschnittslinie. Der orange Balken ganz links ist der **Warmup** (Kaltstart).
+
+![Dashboard – Aktueller Lauf](assets/screenshots/dashboard.png)
+
+## 🆚 Modelle vergleichen + Cloud-Referenz
+
+Starte mehrere Tests hintereinander (verschiedene Modelle/Modi) – im Reiter **Vergleich**
+stehen sie nebeneinander. Die Kennzahl ist umschaltbar; per Knopfdruck blendest du die
+**Cloud-Referenz** (Claude Opus/Sonnet/Haiku, in Cyan) ein.
+
+![Vergleich + Cloud-Referenz](assets/screenshots/vergleich.png)
+
+> ☁ **Cloud-Referenz:** Qualität echt gemessen (an den zwei prüfbaren Aufgaben, je 100 %);
+> Tempo als **Richtwert** der Anbieter-Server – *nicht* auf deiner Hardware gemessen.
+> Werte stehen in [`reference_cloud.json`](reference_cloud.json) und sind anpassbar.
+
+## 🏗️ Wie es funktioniert
+
+```mermaid
+flowchart LR
+    subgraph G["Benchmark-GUI · PySide6 (Tokyo Night)"]
+        UI["Dashboard<br/>KPIs · Ring · Balken · Vergleich"]:::ui
+    end
+    BENCH["bench.py<br/>Messkern · reine stdlib"]:::node
+    OLL["Ollama<br/>HTTP-API :11434"]:::ext
+    MOD[("lokale Modelle<br/>llama · qwen · gemma …")]:::db
+    REF["reference_cloud.json<br/>Claude Opus/Sonnet/Haiku"]:::ref
+
+    UI -->|"Modell · Modus · Reps"| BENCH
+    BENCH -->|"/api/generate (stream)"| OLL --> MOD
+    OLL -->|"Prefill · Decode · TTFT"| BENCH
+    BENCH -->|"Median · p95 · Qualität"| UI
+    REF -.->|"Knopfdruck"| UI
+
+    classDef ui fill:#7aa2f7,stroke:#7aa2f7,color:#16161e
+    classDef node fill:#1f2335,stroke:#7dcfff,color:#c0caf5
+    classDef ext fill:#1f2335,stroke:#73daca,color:#c0caf5
+    classDef db fill:#1f2335,stroke:#9ece6a,color:#c0caf5
+    classDef ref fill:#24283b,stroke:#bb9af7,color:#c0caf5,stroke-dasharray:4 3
 ```
 
-Ergebnisse landen in `results/` als `summary_<label>_<zeit>.md` (Tabelle),
-`.csv` und `raw_*.csv` (jeder Einzellauf inkl. Modell-Antwort).
-**Die `summary`-Dateien zurückschicken** → daraus entsteht der Geräte-Vergleich.
+Die GUI ist nur ein Frontend: Sie ruft die Mess-Funktionen aus `bench.py` auf, die per
+HTTP gegen Ollama streamen. Die Zahlen sind **identisch** zur Kommandozeile.
 
-## GUI (optional)
-Statt der Kommandozeile gibt es ein grafisches Frontend mit Modell-Dropdown,
-„Modelle suchen"-Knopf, Live-Fortschritt, Ergebnistabelle und Export (CSV/MD/JSON):
+## 🧪 Die Mess-Aufgaben
+
+Fünf typische Büro-Aufgaben, jede belastet gezielt einen Engpass:
+
+| Aufgabe | Belastet | Qualitätsprüfung |
+|---|---|---|
+| **Zusammenfassen** (langes Protokoll) | Prefill (Eingabe-Verarbeitung) | – |
+| **E-Mail schreiben** | Decode (lange Ausgabe) | – |
+| **Übersetzen** (DE→EN) | gemischt | – |
+| **JSON-Extraktion** | strukturierte Ausgabe | ✅ JSON-Schlüssel vorhanden |
+| **Dokument-Frage** | Prefill + Genauigkeit | ✅ erwartete Antwort enthalten |
+
+Volltext der Prompts: im Programm unter **Hilfe → Aufgaben** oder in [`tasks.json`](tasks.json).
+
+## 📐 Die Kennzahlen
+
+| Kennzahl | Bedeutung |
+|---|---|
+| **Decode** (t/s) | Ausgabe-Tempo – bandbreitenlastig, hier trennen sich GPU und Mac |
+| **Prefill** (t/s) | Eingabe-Verarbeitung – rechenlastig, wichtig bei langen Texten |
+| **TTFT** (ms) | Zeit bis zum ersten Token – die gefühlte Reaktionszeit |
+| **Decode p95** | nahe Worst-Case – wie gleichmäßig schnell? |
+| **Qualität** (%) | deterministischer Stichprobentest |
+| **Kaltstart** (s) | Modell-Ladezeit (erster Lauf) |
+| **Speicherbedarf** (MB) | Modellgröße – „passt es in den VRAM?" |
+| **Gesamtdauer** (s) | wie lange der ganze Lauf dauert |
+| **GPU-Anteil** (%) | wie viel des Modells real im VRAM lag |
+
+Fair gemessen: `temperature 0`, fester Seed, feste Kontextlänge, **Median + p95** über mehrere
+Läufe, Warmup, Cache-Buster für echte Prefill-Messung.
+
+## 🚀 Schnellstart
+
+**Voraussetzung:** [Ollama](https://ollama.com/download) installiert und gestartet, plus Python 3.9+.
+
+### Grafische Oberfläche
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate    # fish: activate.fish
+python3 -m venv .venv
+source .venv/bin/activate.fish          # fish; sonst: source .venv/bin/activate
 pip install -r requirements.txt
 python benchmark_gui.py
 ```
 
-Als Doppelklick-Programm (kein Python nötig) per PyInstaller baubar — Details und
-OS-Hinweise in [`docs/04-gui.md`](docs/04-gui.md). Ollama muss laufen.
+Dann: **Modelle suchen → Modell wählen → Test starten**. Mehrere Modelle nacheinander
+für den Vergleich.
 
-## Dateien
-| Datei | Zweck |
+### Kommandozeile (ganz ohne Pakete)
+
+```bash
+python bench.py --label laptop-i9 --pull      # voller Lauf, fehlende Modelle laden
+python bench.py --check                        # nur Setup prüfen
+# Rechner im Netz messen (dort nur Ollama nötig):
+OLLAMA_HOST=http://<ip>:11434 python3 bench.py --label bigpc --modes gpu
+```
+
+Ergebnisse landen in `results/` als `summary_*.md|csv` und `raw_*.csv`.
+
+## 📦 Standalone bauen
+
+Ein Doppelklick-Programm ohne installiertes Python – pro Betriebssystem separat
+(PyInstaller cross-kompiliert nicht):
+
+| OS | Befehl | Ergebnis |
+|---|---|---|
+| Linux | `packaging/build-linux.sh` | `dist/BenchGUI/BenchGUI` |
+| macOS | `packaging/build-macos.sh` | `dist/BenchGUI.app` |
+| Windows | `packaging\build-windows.ps1` | `dist\BenchGUI\BenchGUI.exe` |
+
+Details: [`docs/04-gui.md`](docs/04-gui.md). Ollama muss zur Laufzeit laufen.
+
+## 🗂️ Projektstruktur
+
+| Pfad | Zweck |
 |---|---|
-| `bench.py` | Messläufer (Prefill, Decode, TTFT, Qualität) |
-| `benchmark_gui.py` | Grafische Oberfläche (PySide6) für `bench.py` |
-| `tasks.json` | Modell-Liste + 5 Büro-Aufgaben (hier anpassen) |
-| `BenchGUI.spec` | PyInstaller-Konfiguration für den Standalone-Build |
-| `docs/01-konzept.md` | Warum/Was: Konzept, 3 Pfade, Kennzahlen, Entscheidungsregel |
-| `docs/02-recherche.md` | Recherche: Hardware-/Modell-Zahlen, Methodik, Quellen |
-| `docs/03-status-handoff.md` | Aktueller Stand, getroffene Entscheidungen, offene Punkte |
-| `docs/04-gui.md` | GUI-Bedienung + Standalone-Bauen (Win/macOS/Linux) |
+| `benchmark_gui.py` | PySide6-Dashboard (GUI) |
+| `svgcharts.py` | Tokyo-Night-SVG-Diagramme (Ring, Balken, Vergleich) |
+| `bench.py` | Messkern (reine stdlib, Prefill/Decode/TTFT/Qualität) |
+| `tasks.json` | Modell-Liste + 5 Büro-Aufgaben |
+| `reference_cloud.json` | Cloud-Referenz (Opus/Sonnet/Haiku) |
+| `BenchGUI.spec` · `packaging/` | Standalone-Build |
+| `tests/` | Unit-Tests (`python -m unittest discover -s tests`) |
+| `docs/01–04` | Konzept · Recherche · Status · GUI/Bauen |
 
-## Gemessene Kennzahlen
-- **Prefill** (t/s) – Verarbeitung langer Eingaben (rechenlastig)
-- **Decode** (t/s) – Token-Generierung (bandbreitenlastig)
-- **TTFT** (ms) – Zeit bis zum ersten Token
-- **Qualität** – deterministischer Check (JSON-Schlüssel / erwarteter Inhalt)
-- (geplant) **Energie** – Wh pro 1000 Token via Steckdosen-Messgerät
+## 📄 Lizenz
 
-Fair & reproduzierbar: `temperature 0`, fester Seed, feste Kontextlänge,
-**Median + p95** über mehrere Läufe, Warmup, Cache-Buster für echte Prefill-Messung.
+[MIT](LICENSE) · © 2026 Marcel Räuber
+
+<div align="center"><sub>Diagramm-Stil angelehnt an das Schwester-Projekt „Zweites Gehirn / ObsidianRAG".</sub></div>
