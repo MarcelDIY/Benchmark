@@ -42,6 +42,11 @@ python benchmark_gui.py
 PyInstaller **cross-kompiliert nicht** — jedes Ziel-OS muss auf genau diesem OS
 gebaut werden. Konfiguration steckt in `BenchGUI.spec`.
 
+> **Ohne fremde Hardware:** `.github/workflows/build.yml` baut bei jedem Tag-Push
+> (`v*`) alle vier Bundles in der Cloud — **Linux, Windows, macOS arm64 + x86_64** —
+> und hängt sie an ein GitHub-Release. Ideal, wenn man (wie hier) nur Linux-Rechner
+> hat. Lokaler Build nur noch für schnelle Tests nötig.
+
 | OS | Befehl | Ergebnis |
 |---|---|---|
 | Linux | `packaging/build-linux.sh` | `dist/BenchGUI/BenchGUI` |

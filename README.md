@@ -10,6 +10,7 @@ Miss **Tempo, Speicher und Qualität** lokaler Sprachmodelle über [Ollama](http
 als schickes Dashboard, mit **Modell-Vergleich** und **Cloud-Referenz**.
 Hilft bei der Kaufentscheidung **16-GB-GPU-PC** · **Apple-Silicon-Mac** · **CPU + viel RAM**.
 
+[![Build Standalone](https://github.com/MarcelDIY/Benchmark/actions/workflows/build.yml/badge.svg)](https://github.com/MarcelDIY/Benchmark/actions/workflows/build.yml)
 ![100% lokal](https://img.shields.io/badge/100%25-lokal-9ece6a?style=flat-square&labelColor=1a1b26)
 ![Kosten](https://img.shields.io/badge/Kosten-0%20%E2%82%AC-9ece6a?style=flat-square&labelColor=1a1b26)
 ![API-Key](https://img.shields.io/badge/API--Key-keiner-7aa2f7?style=flat-square&labelColor=1a1b26)
@@ -163,8 +164,12 @@ Ergebnisse landen in `results/` als `summary_*.md|csv` und `raw_*.csv`.
 
 ## 📦 Standalone bauen
 
-Ein Doppelklick-Programm ohne installiertes Python – pro Betriebssystem separat
-(PyInstaller cross-kompiliert nicht):
+Ein Doppelklick-Programm ohne installiertes Python.
+
+**Fertige Binaries:** unter [**Releases**](../../releases) für **Windows, macOS (Intel + Apple Silicon) und Linux** –
+automatisch von [GitHub Actions](.github/workflows/build.yml) gebaut. Ein Tag-Push (`v1.0`) erzeugt sie alle.
+
+**Selbst bauen:** pro Betriebssystem separat (PyInstaller cross-kompiliert nicht):
 
 | OS | Befehl | Ergebnis |
 |---|---|---|
@@ -173,6 +178,9 @@ Ein Doppelklick-Programm ohne installiertes Python – pro Betriebssystem separa
 | Windows | `packaging\build-windows.ps1` | `dist\BenchGUI\BenchGUI.exe` |
 
 Details: [`docs/04-gui.md`](docs/04-gui.md). Ollama muss zur Laufzeit laufen.
+
+> 🍎 macOS-Binaries sind **unsigniert** → Gatekeeper meckert beim Erststart.
+> Freigeben mit Rechtsklick → *Öffnen* oder `xattr -dr com.apple.quarantine BenchGUI.app`.
 
 ## 🗂️ Projektstruktur
 

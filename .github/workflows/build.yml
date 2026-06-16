@@ -1,0 +1,100 @@
+name: Build Standalone
+
+# Baut die PySide6-GUI als Standalone-Bundle pro Betriebssystem.
+# PyInstaller cross-kompiliert NICHT -> jeder Runner baut nativ fuer sein OS.
+#
+# Auslöser:
+#   - manuell ("Run workflow" / workflow_dispatch)
+#   - Tag wie v1.0  -> zusaetzlich ein GitHub-Release mit allen Binaries
+#   - Pull Requests -> nur Build (Smoke-Test, kein Release)
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux auf aelterer glibc (22.04) -> laeuft auch auf neueren Distros.
+          - os: ubuntu-22.04
+            name: linux-x64
+          - os: windows-latest
+            name: windows-x64
+          # macos-14 = Apple Silicon (arm64), macos-13 = Intel (x86_64).
+          - os: macos-14
+            name: macos-arm64
+          - os: macos-13
+            name: macos-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Abhaengigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Standalone bauen
+        run: pyinstaller --noconfirm BenchGUI.spec
+
+      # --- Bundeln. tar bewahrt auf Unix die +x-Bits und Symlinks im .app/Framework
+      #     (upload-artifact zippt sonst und macht das Bundle unbrauchbar). ---
+      - name: Archiv erzeugen (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cd dist
+          if [ -d BenchGUI.app ]; then
+            tar -czf "../BenchGUI-${{ matrix.name }}.tar.gz" BenchGUI.app
+          else
+            tar -czf "../BenchGUI-${{ matrix.name }}.tar.gz" BenchGUI
+          fi
+
+      - name: Archiv erzeugen (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/BenchGUI -DestinationPath "BenchGUI-${{ matrix.name }}.zip"
+
+      - name: Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: BenchGUI-${{ matrix.name }}
+          path: |
+            BenchGUI-${{ matrix.name }}.tar.gz
+            BenchGUI-${{ matrix.name }}.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Release veroeffentlichen
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # noetig, um den Release zu erstellen
+    steps:
+      - name: Artefakte einsammeln
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: GitHub-Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "${{ github.ref_name }}" artifacts/* --generate-notes --title "${{ github.ref_name }}"
