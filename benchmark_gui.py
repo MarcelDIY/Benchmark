@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Standalone-GUI für den lokalen Büro-LLM-Hardware-Benchmark (Dark-Theme).
+Standalone-GUI für den lokalen Büro-LLM-Hardware-Benchmark (Tokyo-Night-Dashboard).
 
-Ein PySide6-Frontend für bench.py: Ollama-Host eingeben, mit "Modelle suchen" die
-lokal installierten Modelle ins Dropdown laden, eines auswählen, den Test durchlaufen
-lassen und Ergebnisse als KPI-Kacheln, Tabelle + Diagramme ansehen und exportieren.
+PySide6-Frontend für bench.py: Modelle aus Ollama scannen, eines testen, Ergebnisse
+als KPI-Kacheln, SVG-Diagramme (Ring + Balken) und Tabelle ansehen, mehrere Läufe
+verschiedener Modelle sammeln und im Reiter "Vergleich" gegenüberstellen, exportieren.
 
 Voraussetzung zur Laufzeit: ein laufendes Ollama (Standard http://localhost:11434).
-Ollama wird NICHT mitgebündelt – es ist eine externe Voraussetzung.
-
-Die Messung kommt unverändert aus bench.py. Läuft auf Windows, macOS und Linux;
-mit PyInstaller als Standalone baubar (siehe BenchGUI.spec).
+Die Messung kommt unverändert aus bench.py. Standalone baubar via PyInstaller.
 """
 import html
 import json
@@ -22,9 +19,9 @@ import sys
 import threading
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, QObject, QThread, Signal, Slot
-from PySide6.QtGui import (QAction, QBrush, QColor, QFont, QIcon, QLinearGradient,
-                           QPainter, QPainterPath, QPen)
+from PySide6.QtCore import QByteArray, QRectF, Qt, QTimer, QObject, QThread, Signal, Slot
+from PySide6.QtGui import QAction, QColor, QPainter
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame,
     QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
@@ -34,15 +31,15 @@ from PySide6.QtWidgets import (
 )
 
 import bench
+import svgcharts as SC
 
 VERSION = "1.0"
 
-# --- Farb-Palette (Tokyo Night, konsistent mit dem zweiten Gehirn) ---
-BG = "#16161e"      # Fenster
-CARD = "#1a1b26"    # Karten
-INPUT = "#1f2335"   # Eingaben / erhöhte Flächen
-BORDER = "#2a2e42"  # Haarlinie
-TRACK = "#222637"   # Balken-Spur
+# Palette (Tokyo Night)
+BG = "#16161e"
+CARD = "#1a1b26"
+INPUT = "#1f2335"
+BORDER = "#2a2e42"
 TXT = "#c0caf5"
 TXT2 = "#565f89"
 BLUE = "#7aa2f7"
@@ -51,23 +48,6 @@ TEAL = "#73daca"
 GREEN = "#9ece6a"
 AMBER = "#e0af68"
 RED = "#f7768e"
-PURPLE = "#bb9af7"
-
-
-def _mono(size, bold=False):
-    f = QFont()
-    f.setStyleHint(QFont.Monospace)
-    f.setFamilies(["JetBrains Mono", "DejaVu Sans Mono", "Cascadia Code", "monospace"])
-    f.setPointSizeF(size)
-    f.setBold(bold)
-    return f
-
-
-def _grad(x1, y1, x2, y2, c0, c1):
-    g = QLinearGradient(x1, y1, x2, y2)
-    g.setColorAt(0.0, QColor(c0))
-    g.setColorAt(1.0, QColor(c1))
-    return QBrush(g)
 
 TASK_NAMES = {
     "zusammenfassen_prefill": "Zusammenfassen",
@@ -121,6 +101,16 @@ def safe_label(label):
     return out or "rechner"
 
 
+def _num(v):
+    """'' / None / 'x' -> None, sonst float."""
+    try:
+        if v in ("", None):
+            return None
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 TABLE_COLS = [
     ("task", "Aufgabe"),
     ("ttft_ms_med", "TTFT (ms)"),
@@ -130,135 +120,33 @@ TABLE_COLS = [
 ]
 
 
-# ============================================================ Diagramm-Widgets ==
-class DonutChart(QWidget):
-    """Ringdiagramm: das Modell (100%) verteilt auf GPU (teal) + CPU (amber)."""
+# ============================================================ SVG-Diagramm ======
+class SvgView(QWidget):
+    """Zeigt ein dynamisch erzeugtes SVG (Generator(w,h)->str) scharf an."""
 
-    def __init__(self):
+    def __init__(self, minh=140):
         super().__init__()
-        self._gpu = None
-        self.setMinimumHeight(132)
-        self.setMaximumHeight(150)
-
-    def set_value(self, gpu_pct):
-        self._gpu = gpu_pct
-        self.update()
-
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
-        d = min(w, h, 134) - 6
-        x, y = (w - d) / 2, (h - d) / 2
-        rect = QRectF(x, y, d, d)
-        thick = max(11, d * 0.15)
-
-        if self._gpu is None:
-            p.setPen(QPen(QColor(TRACK), thick, Qt.SolidLine, Qt.FlatCap))
-            p.drawArc(rect, 0, 360 * 16)
-            p.setPen(QColor(TXT2))
-            p.setFont(QFont("", 9))
-            p.drawText(rect, Qt.AlignCenter, "noch\nkein Lauf")
-            return
-
-        gpu = max(0, min(100, self._gpu))
-        cpu = 100 - gpu
-        gspan = 360 * gpu / 100
-        for col, start, span in ((TEAL, 90, -gspan), (AMBER, 90 - gspan, -(360 - gspan))):
-            if abs(span) < 0.1:
-                continue
-            glow = QColor(col)
-            glow.setAlpha(42)
-            p.setPen(QPen(glow, thick + 8, Qt.SolidLine, Qt.FlatCap))
-            p.drawArc(rect, int(start * 16), int(span * 16))
-            p.setPen(QPen(QColor(col), thick, Qt.SolidLine, Qt.FlatCap))
-            p.drawArc(rect, int(start * 16), int(span * 16))
-
-        p.setFont(_mono(d * 0.12, True))
-        p.setPen(QColor(TEAL))
-        p.drawText(QRectF(x, y + d * 0.28, d, d * 0.22), Qt.AlignCenter, f"GPU {gpu}%")
-        p.setPen(QColor(AMBER))
-        p.drawText(QRectF(x, y + d * 0.50, d, d * 0.22), Qt.AlignCenter, f"CPU {cpu}%")
-
-
-class BarChart(QWidget):
-    """Balkendiagramm: ein Balken pro Lauf + Durchschnittslinie. Warmup amber."""
-
-    def __init__(self):
-        super().__init__()
-        self._bars = []
-        self._avg = None
-        self._fmt = lambda v: f"{v:.0f}"
-        self._caption = ""
-        self.setMinimumHeight(150)
+        self._gen = None
+        self.setMinimumHeight(minh)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-    def set_data(self, bars, avg, fmt, caption=""):
-        self._bars, self._avg, self._fmt, self._caption = bars, avg, fmt, caption
+    def set_gen(self, gen):
+        self._gen = gen
         self.update()
 
     def paintEvent(self, _):
+        if not self._gen:
+            return
+        w, h = max(1, self.width()), max(1, self.height())
+        try:
+            svg = self._gen(w, h)
+        except Exception:
+            return
+        r = QSvgRenderer(QByteArray(svg.encode("utf-8")))
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
-        left, right, top, bottom = 10, 10, 40, 30
-        plot = QRectF(left, top, w - left - right, h - top - bottom)
-
-        if not self._bars:
-            p.setPen(QColor(TXT2))
-            p.setFont(QFont("", 9))
-            p.drawText(self.rect(), Qt.AlignCenter,
-                       "Aufgabe in der Tabelle wählen,\num die Läufe zu sehen.")
-            return
-
-        if self._caption:
-            p.setPen(QColor(TXT2))
-            p.setFont(QFont("", 9))
-            p.drawText(QRectF(left, 3, w - 2 * left, 16), Qt.AlignLeft, self._caption)
-
-        vals = [v for _, v, _ in self._bars if v is not None]
-        vmax = (max(vals + ([self._avg] if self._avg else []), default=1) or 1) * 1.28
-        n = len(self._bars)
-        gap = 9
-        bw = max(6, (plot.width() - gap * (n - 1)) / n)
-
-        # Durchschnittslinie
-        if self._avg:
-            ay = plot.bottom() - (self._avg / vmax) * plot.height()
-            p.setPen(QPen(QColor(TXT2), 1.2, Qt.DashLine))
-            p.drawLine(QPointF(plot.left(), ay), QPointF(plot.right(), ay))
-            p.setPen(QColor(TXT))
-            p.setFont(_mono(8.5, True))
-            p.drawText(QRectF(plot.left() + 2, ay - 15, plot.width(), 13),
-                       Qt.AlignLeft | Qt.AlignVCenter, f"Ø {self._fmt(self._avg)}")
-
-        for i, (lbl, val, warm) in enumerate(self._bars):
-            if val is None:
-                continue
-            bx = plot.left() + i * (bw + gap)
-            # Spur
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(TRACK))
-            p.drawRoundedRect(QRectF(bx, plot.top(), bw, plot.height()), 5, 5)
-            bh = max(2.0, (val / vmax) * plot.height())
-            by = plot.bottom() - bh
-            # Glow
-            glow = QColor(AMBER if warm else TEAL)
-            glow.setAlpha(55)
-            p.setBrush(glow)
-            p.drawRoundedRect(QRectF(bx - 1.5, by - 1.5, bw + 3, bh + 1.5), 6, 6)
-            # Balken mit Verlauf
-            p.setBrush(_grad(bx, by, bx, plot.bottom(), AMBER if warm else CYAN, RED if warm else TEAL))
-            p.drawRoundedRect(QRectF(bx, by, bw, bh), 5, 5)
-            # Wert (mono), mit Kopfraum
-            p.setPen(QColor(TXT))
-            p.setFont(_mono(8.5, True))
-            ly = max(plot.top() - 2, by - 16)
-            p.drawText(QRectF(bx - 8, ly, bw + 16, 14), Qt.AlignCenter, self._fmt(val))
-            # x-Label
-            p.setPen(QColor(AMBER if warm else TXT2))
-            p.setFont(QFont("", 8, QFont.Bold if warm else QFont.Normal))
-            p.drawText(QRectF(bx - 8, plot.bottom() + 3, bw + 16, 16), Qt.AlignCenter, lbl)
+        r.render(p, QRectF(0, 0, w, h))
+        p.end()
 
 
 class StatTile(QFrame):
@@ -465,8 +353,7 @@ HELP_STYLE = (
     f"a{{color:{BLUE};text-decoration:none;}}"
     f"code{{color:{AMBER};font-family:monospace;}}"
     f"pre{{background:{BG};color:#a9b1d6;padding:10px;font-family:monospace;white-space:pre-wrap;}}"
-    f"li{{margin-bottom:5px;}} ol,ul{{margin-left:2px;}}"
-    f".lead{{color:{TXT2};}}"
+    f"li{{margin-bottom:5px;}} ol,ul{{margin-left:2px;}} .lead{{color:{TXT2};}}"
     "</style>")
 
 
@@ -474,7 +361,7 @@ class HelpDialog(QDialog):
     def __init__(self, parent, tasks):
         super().__init__(parent)
         self.setWindowTitle("Hilfe & Infos")
-        self.resize(740, 600)
+        self.resize(760, 620)
         lay = QVBoxLayout(self)
         tabs = QTabWidget()
         tabs.addTab(self._page(self._bedienung()), "Bedienung")
@@ -508,11 +395,12 @@ class HelpDialog(QDialog):
             "<li><b>Modelle suchen.</b> Füllt das Dropdown mit den installierten Modellen.</li>"
             "<li><b>Modell &amp; Modus wählen</b> (gpu/cpu), Wiederholungen und Warmup einstellen.</li>"
             "<li><b>Test starten.</b> Es laufen alle Büro-Aufgaben durch. Jederzeit abbrechbar.</li>"
-            "<li><b>Ergebnis ansehen.</b> Oben die Kennzahlen, links die Tabelle, rechts die "
-            "Diagramme (Ring = GPU/CPU-Verteilung, Balken = einzelne Läufe). Klicke eine Aufgabe "
-            "in der Tabelle, um ihre Läufe zu sehen.</li>"
+            "<li><b>Ergebnis ansehen</b> (Reiter „Aktueller Lauf“): Kennzahlen, Ring (GPU/CPU), "
+            "Tabelle und Balken je Lauf. Klicke eine Aufgabe, um ihre Läufe zu sehen.</li>"
+            "<li><b>Vergleichen.</b> Starte weitere Tests mit anderen Modellen – im Reiter "
+            "„Vergleich“ stehen alle Läufe nebeneinander.</li>"
             "<li><b>Exportieren</b> als CSV, Markdown oder JSON.</li></ol>"
-            "<p><i>Tipp für einen schnellen Eindruck: kleines Modell, Wiederholungen auf 1–2.</i></p>")
+            "<p><i>Tipp: kleines Modell + Wiederholungen 1–2 für einen schnellen ersten Eindruck.</i></p>")
 
     @staticmethod
     def _begriffe():
@@ -530,8 +418,8 @@ class HelpDialog(QDialog):
             "<li><b>Warmup</b>: nicht gewerteter Vorlauf, der das Modell lädt. Der Kaltstart ist viel "
             "langsamer – im Balkendiagramm als oranger Balken sichtbar.</li>"
             "<li><b>Wiederholungen</b>: mehrere Messungen → stabiler Durchschnitt.</li>"
-            "<li><b>GPU/CPU-Verteilung</b>: der Ring zeigt, wie sich das Modell (100%) auf GPU "
-            "(VRAM) und CPU verteilt hat.</li></ul>")
+            "<li><b>GPU/CPU-Verteilung</b>: der Ring zeigt das Modell (100%) verteilt auf GPU "
+            "(VRAM) und CPU.</li></ul>")
 
     @staticmethod
     def _aufgaben(tasks):
@@ -567,9 +455,11 @@ class HelpDialog(QDialog):
 
     @staticmethod
     def _ueber():
+        icon = resource_path(os.path.join("assets", "icon.png")).replace("\\", "/")
         return (
-            "<h2>Lokaler LLM-Benchmark</h2>"
-            f"<p class='lead'>Version {VERSION} · MIT-Lizenz · von Marcel Räuber</p>"
+            f"<table><tr><td><img src='file://{icon}' width='64' height='64'></td>"
+            "<td>&nbsp;&nbsp;</td><td><h2>Lokaler LLM-Benchmark</h2>"
+            f"<span class='lead'>Version {VERSION} · MIT-Lizenz · von Marcel Räuber</span></td></tr></table>"
             "<p>Misst Geschwindigkeit (Prefill, Decode, Time-to-First-Token) und eine einfache "
             "Qualitätsprüfung lokaler KI-Modelle über Ollama – um Hardware zu vergleichen:</p>"
             f"<p style='font-size:13pt'><b style='color:{TEAL}'>GPU-PC</b> &nbsp;·&nbsp; "
@@ -584,25 +474,30 @@ class HelpDialog(QDialog):
 # ================================================================== Fenster =====
 class MainWindow(QMainWindow):
     IDLE, SCANNING, RUNNING = "idle", "scanning", "running"
-    METRICS = [("Decode (t/s)", "reps_decode", "decode_toks", lambda v: f"{v:.1f}"),
-               ("Prefill (t/s)", "reps_prefill", "prefill_toks", lambda v: f"{v:.0f}"),
-               ("TTFT (ms)", "reps_ttft", "ttft_ms", lambda v: f"{v:.0f}")]
+    METRICS = [("Decode (t/s)", "reps_decode", "decode_toks", 1),
+               ("Prefill (t/s)", "reps_prefill", "prefill_toks", 0),
+               ("TTFT (ms)", "reps_ttft", "ttft_ms", 0)]
+    CMP_METRICS = [("Decode (t/s)", "decode", 1, "höher = besser"),
+                   ("Prefill (t/s)", "prefill", 0, "höher = besser"),
+                   ("TTFT (ms)", "ttft", 0, "niedriger = besser"),
+                   ("GPU-Anteil (%)", "gpu_pct", 0, "Anteil im VRAM")]
+    CMP_COLS = ["Modell", "Modus", "Label", "Decode", "Prefill", "TTFT", "GPU%", "Qualität"]
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Lokaler LLM-Benchmark")
-        _icon = QIcon(resource_path(os.path.join("assets", "icon.png")))
-        if not _icon.isNull():
+        _icon = QIconSafe()
+        if _icon:
             self.setWindowIcon(_icon)
-        # an den Bildschirm anpassen (passt auch auf kleine Displays)
         scr = QApplication.primaryScreen().availableGeometry()
-        self.resize(min(1040, int(scr.width() * 0.94)), min(880, int(scr.height() * 0.94)))
-        self.setMinimumSize(760, 500)
+        self.resize(min(1060, int(scr.width() * 0.94)), min(880, int(scr.height() * 0.94)))
+        self.setMinimumSize(780, 520)
 
         self._thread = None
         self._worker = None
         self._last_payload = None
         self._details = {}
+        self._runs = []          # gesammelte Läufe für den Vergleich
         self.sys_info = bench.system_info()
         self.tasks = self._load_tasks()
 
@@ -735,69 +630,13 @@ class MainWindow(QMainWindow):
         prog.addWidget(self.log_view)
         root.addWidget(prog_box)
 
-        # Ergebnisse
+        # Ergebnisse: Reiter "Aktueller Lauf" + "Vergleich"
         res_box = QGroupBox("Ergebnisse")
         res = QVBoxLayout(res_box)
-        kpi = QHBoxLayout()
-        kpi.setSpacing(8)
-        self.tile_decode = StatTile("Decode Ø (t/s)")
-        self.tile_prefill = StatTile("Prefill Ø (t/s)")
-        self.tile_ttft = StatTile("TTFT (ms)")
-        self.tile_qual = StatTile("Qualität", GREEN)
-        for t in (self.tile_decode, self.tile_prefill, self.tile_ttft, self.tile_qual):
-            kpi.addWidget(t, 1)
-        res.addLayout(kpi)
-
-        split = QSplitter(Qt.Horizontal)
-        left = QWidget()
-        ll = QVBoxLayout(left)
-        ll.setContentsMargins(0, 0, 0, 0)
-        self.table = QTableWidget(0, len(TABLE_COLS))
-        self.table.setHorizontalHeaderLabels([c[1] for c in TABLE_COLS])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for i in range(1, len(TABLE_COLS)):
-            self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setAlternatingRowColors(True)
-        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.itemSelectionChanged.connect(self.on_row_selected)
-        self.table.setMinimumHeight(150)
-        ll.addWidget(self.table)
-        legend = QLabel("Prefill = Eingabe-Tempo · Decode = Ausgabe-Tempo · "
-                        "TTFT = Reaktionszeit · Qualität = Korrektheit")
-        legend.setWordWrap(True)
-        legend.setStyleSheet(f"color:{TXT2};font-size:9pt;")
-        ll.addWidget(legend)
-        split.addWidget(left)
-
-        right = QWidget()
-        rl = QVBoxLayout(right)
-        rl.setContentsMargins(0, 0, 0, 0)
-        rl.addWidget(self._titled("GPU/CPU-Verteilung"))
-        self.donut = DonutChart()
-        rl.addWidget(self.donut)
-        self.placement_label = QLabel("")
-        self.placement_label.setAlignment(Qt.AlignCenter)
-        self.placement_label.setWordWrap(True)
-        self.placement_label.setStyleSheet(f"color:{TXT2};font-size:9pt;")
-        rl.addWidget(self.placement_label)
-        mrow = QHBoxLayout()
-        mrow.addWidget(self._titled("Läufe je Aufgabe"))
-        mrow.addStretch(1)
-        self.metric_combo = QComboBox()
-        self.metric_combo.addItems([m[0] for m in self.METRICS])
-        self.metric_combo.currentIndexChanged.connect(lambda _i: self._update_charts())
-        mrow.addWidget(self.metric_combo)
-        rl.addLayout(mrow)
-        self.bars = BarChart()
-        rl.addWidget(self.bars, 1)
-        split.addWidget(right)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
-        split.setSizes([560, 420])
-        res.addWidget(split, 1)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_run_tab(), "Aktueller Lauf")
+        self.tabs.addTab(self._build_cmp_tab(), "Vergleich (0)")
+        res.addWidget(self.tabs)
 
         exp_row = QHBoxLayout()
         self.help_btn = QPushButton("Hilfe && Infos")
@@ -820,6 +659,98 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"System: {self.sys_info['os']} | {self.sys_info['cpu']} | "
             f"{self.sys_info['ram_gb']} GB RAM")
+
+    def _build_run_tab(self):
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(2, 8, 2, 2)
+        kpi = QHBoxLayout()
+        kpi.setSpacing(8)
+        self.tile_decode = StatTile("Decode Ø (t/s)")
+        self.tile_prefill = StatTile("Prefill Ø (t/s)")
+        self.tile_ttft = StatTile("TTFT (ms)")
+        self.tile_qual = StatTile("Qualität", GREEN)
+        for t in (self.tile_decode, self.tile_prefill, self.tile_ttft, self.tile_qual):
+            kpi.addWidget(t, 1)
+        lay.addLayout(kpi)
+
+        split = QSplitter(Qt.Horizontal)
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        self.table = QTableWidget(0, len(TABLE_COLS))
+        self.table.setHorizontalHeaderLabels([c[1] for c in TABLE_COLS])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        for i in range(1, len(TABLE_COLS)):
+            self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.itemSelectionChanged.connect(self.on_row_selected)
+        self.table.setMinimumHeight(140)
+        ll.addWidget(self.table)
+        legend = QLabel("Prefill = Eingabe-Tempo · Decode = Ausgabe-Tempo · "
+                        "TTFT = Reaktionszeit · Qualität = Korrektheit")
+        legend.setWordWrap(True)
+        legend.setStyleSheet(f"color:{TXT2};font-size:9pt;")
+        ll.addWidget(legend)
+        split.addWidget(left)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.addWidget(self._titled("GPU/CPU-Verteilung"))
+        self.donut = SvgView(minh=132)
+        self.donut.setMaximumHeight(150)
+        rl.addWidget(self.donut)
+        mrow = QHBoxLayout()
+        mrow.addWidget(self._titled("Läufe je Aufgabe"))
+        mrow.addStretch(1)
+        self.metric_combo = QComboBox()
+        self.metric_combo.addItems([m[0] for m in self.METRICS])
+        self.metric_combo.currentIndexChanged.connect(lambda _i: self._update_charts())
+        mrow.addWidget(self.metric_combo)
+        rl.addLayout(mrow)
+        self.runs_view = SvgView(minh=160)
+        rl.addWidget(self.runs_view, 1)
+        split.addWidget(right)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        split.setSizes([560, 430])
+        lay.addWidget(split, 1)
+        return page
+
+    def _build_cmp_tab(self):
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(2, 8, 2, 2)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Kennzahl:"))
+        self.cmp_combo = QComboBox()
+        self.cmp_combo.addItems([m[0] for m in self.CMP_METRICS])
+        self.cmp_combo.currentIndexChanged.connect(lambda _i: self._refresh_compare())
+        top.addWidget(self.cmp_combo)
+        top.addStretch(1)
+        self.clear_runs_btn = QPushButton("Läufe zurücksetzen")
+        self.clear_runs_btn.clicked.connect(self.on_clear_runs)
+        top.addWidget(self.clear_runs_btn)
+        lay.addLayout(top)
+
+        self.cmp_view = SvgView(minh=180)
+        lay.addWidget(self.cmp_view, 1)
+        self.cmp_table = QTableWidget(0, len(self.CMP_COLS))
+        self.cmp_table.setHorizontalHeaderLabels(self.CMP_COLS)
+        self.cmp_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        for i in range(1, len(self.CMP_COLS)):
+            self.cmp_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        self.cmp_table.verticalHeader().setVisible(False)
+        self.cmp_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.cmp_table.setMinimumHeight(120)
+        lay.addWidget(self.cmp_table)
+        self._refresh_compare()
+        return page
 
     @staticmethod
     def _titled(text):
@@ -846,6 +777,7 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setEnabled(running)
         for b in (self.export_csv_btn, self.export_md_btn, self.export_json_btn):
             b.setEnabled(idle and has_results)
+        self.clear_runs_btn.setEnabled(idle and bool(self._runs))
         if state == self.SCANNING:
             self.statusBar().showMessage("Scanne Host …")
         elif running:
@@ -899,12 +831,12 @@ class MainWindow(QMainWindow):
         self.log_view.clear()
         self.prog_bar.setValue(0)
         self.prog_label.setText("Starte …")
-        self.placement_label.setText("")
-        self.donut.set_value(None)
-        self.bars.set_data([], None, lambda v: f"{v}")
+        self.donut.set_gen(lambda w, h: SC.donut(None, None, None, w, h))
+        self.runs_view.set_gen(None)
         for t in (self.tile_decode, self.tile_prefill, self.tile_ttft, self.tile_qual):
             t.set("–")
         self._last_payload = None
+        self.tabs.setCurrentIndex(0)
 
         self._worker = BenchWorker(
             host=host, model=self.model_combo.currentText(),
@@ -984,6 +916,8 @@ class MainWindow(QMainWindow):
         self.prog_label.setText("Fertig." if ok else f"Benchmark {msg}.")
         self._show_placement(payload)
         self._fill_kpis(payload)
+        if ok:
+            self._add_run(payload)
         if self.table.rowCount():
             for r in range(self.table.rowCount()):
                 cell = self.table.item(r, 0)
@@ -1007,18 +941,13 @@ class MainWindow(QMainWindow):
 
     def _show_placement(self, payload):
         pl = payload.get("placement") if payload else None
-        cfg = payload.get("config") if payload else {}
         if not pl or pl.get("gpu_pct") is None:
-            self.donut.set_value(None)
-            self.placement_label.setText("")
+            self.donut.set_gen(lambda w, h: SC.donut(None, None, None, w, h))
             return
-        gp = pl["gpu_pct"]
-        self.donut.set_value(gp)
-        extra = (f"{pl['vram_mb']} von {pl['total_mb']} MB im VRAM · "
-                 if pl.get("total_mb") else "")
-        self.placement_label.setText(f"{extra}Modus '{cfg.get('mode', '?')}'")
+        gp, vram, total = pl["gpu_pct"], pl.get("vram_mb"), pl.get("total_mb")
+        self.donut.set_gen(lambda w, h: SC.donut(gp, vram, total, w, h))
 
-    # ---- Diagramme ----
+    # ---- Lauf-Diagramm (aktueller Lauf) ----
     def on_row_selected(self):
         self._update_charts()
 
@@ -1031,10 +960,10 @@ class MainWindow(QMainWindow):
 
     def _update_charts(self):
         tid = self._selected_task()
-        _name, reps_key, warm_key, fmt = self.METRICS[self.metric_combo.currentIndex()]
+        name, reps_key, warm_key, dec = self.METRICS[self.metric_combo.currentIndex()]
         detail = self._details.get(tid)
         if not detail:
-            self.bars.set_data([], None, fmt, "GESAMT" if tid == "GESAMT" else "")
+            self.runs_view.set_gen(None)
             return
         bars = []
         warm = detail.get("warmup")
@@ -1044,7 +973,63 @@ class MainWindow(QMainWindow):
             bars.append((f"#{i + 1}", v, False))
         valid = [v for _, v, w in bars if (not w) and v is not None]
         avg = statistics.mean(valid) if valid else None
-        self.bars.set_data(bars, avg, fmt, f"{friendly(tid)} – {self.metric_combo.currentText()}")
+        cap = f"{friendly(tid)} – {name}"
+        self.runs_view.set_gen(lambda w, h: SC.runs(bars, avg, dec, cap, w, h))
+
+    # ---- Vergleich ----
+    def _add_run(self, payload):
+        rows = payload.get("rows") or []
+        g = next((r for r in rows if r.get("task") == "GESAMT"), None) or (rows[0] if rows else None)
+        if not g:
+            return
+        cfg = payload.get("config", {})
+        rec = {
+            "name": f"{cfg.get('model', '?')} @ {cfg.get('mode', '?')}",
+            "model": cfg.get("model", "?"), "mode": cfg.get("mode", "?"),
+            "label": payload.get("label", ""),
+            "decode": _num(g.get("decode_toks_med")),
+            "prefill": _num(g.get("prefill_toks_med")),
+            "ttft": _num(g.get("ttft_ms_med")),
+            "gpu_pct": cfg.get("gpu_pct"),
+            "quality": g.get("quality") or "",
+        }
+        self._runs.append(rec)
+        self.tabs.setTabText(1, f"Vergleich ({len(self._runs)})")
+        self._refresh_compare()
+
+    def on_clear_runs(self):
+        if not self._runs:
+            return
+        self._runs.clear()
+        self.tabs.setTabText(1, "Vergleich (0)")
+        self._refresh_compare()
+        self._set_state(self._state)
+
+    def _refresh_compare(self):
+        name, key, dec, hint = self.CMP_METRICS[self.cmp_combo.currentIndex()]
+        items = []
+        for i, rec in enumerate(self._runs):
+            v = rec.get(key)
+            if v is None:
+                continue
+            items.append((rec["name"], float(v), SC.CYCLE[i % len(SC.CYCLE)]))
+        cap = f"Modell-Vergleich – {name}"
+        unit = hint
+        self.cmp_view.set_gen(lambda w, h: SC.compare(items, dec, unit, cap, w, h))
+        # Tabelle
+        self.cmp_table.setRowCount(0)
+        for rec in self._runs:
+            r = self.cmp_table.rowCount()
+            self.cmp_table.insertRow(r)
+            vals = [rec["model"], rec["mode"], rec["label"],
+                    _fmt(rec["decode"], 1), _fmt(rec["prefill"], 0), _fmt(rec["ttft"], 0),
+                    (f"{rec['gpu_pct']}%" if rec.get("gpu_pct") is not None else "–"),
+                    rec["quality"] or "–"]
+            for c, val in enumerate(vals):
+                item = QTableWidgetItem(str(val))
+                if c >= 3:
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.cmp_table.setItem(r, c, item)
 
     # ---- Export ----
     def on_export(self, fmt):
@@ -1087,6 +1072,16 @@ class MainWindow(QMainWindow):
                 th.terminate()
                 th.wait(2000)
         event.accept()
+
+
+def _fmt(v, dec):
+    return "–" if v is None else f"{v:.{dec}f}"
+
+
+def QIconSafe():
+    from PySide6.QtGui import QIcon
+    ic = QIcon(resource_path(os.path.join("assets", "icon.png")))
+    return ic if not ic.isNull() else None
 
 
 _CD = resource_path(os.path.join("assets", "caret-down.png")).replace("\\", "/")
@@ -1148,7 +1143,6 @@ QHeaderView::section {{
 QTableCornerButton::section {{ background: {INPUT}; border: none; }}
 QTextBrowser {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 8px; color: {TXT}; }}
 QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: 8px; top: -1px; }}
-QTabBar {{ qproperty-drawBase: 0; }}
 QTabBar::tab {{
     background: {INPUT}; color: {TXT2}; padding: 7px 18px;
     border-top-left-radius: 8px; border-top-right-radius: 8px; margin-right: 3px;
@@ -1181,9 +1175,9 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("LLM-Benchmark")
     app.setStyleSheet(STYLESHEET)
-    _icon = QIcon(resource_path(os.path.join("assets", "icon.png")))
-    if not _icon.isNull():
-        app.setWindowIcon(_icon)
+    ic = QIconSafe()
+    if ic:
+        app.setWindowIcon(ic)
     win = MainWindow()
     win.show()
     sys.exit(app.exec())
