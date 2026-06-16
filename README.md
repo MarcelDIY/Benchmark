@@ -141,6 +141,15 @@ Läufe, Warmup, Cache-Buster für echte Prefill-Messung.
 
 ### Grafische Oberfläche
 
+**Schnellster Weg – Starter (legt `.venv` an und installiert PySide6 beim ersten Start):**
+
+```bash
+./start-linux.sh        # Linux/macOS
+start-windows.bat       # Windows (Doppelklick)
+```
+
+**Oder manuell:**
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate.fish          # fish; sonst: source .venv/bin/activate
