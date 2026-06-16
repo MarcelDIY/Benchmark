@@ -19,3 +19,6 @@ venv/
 # PyInstaller-Ausgaben (BenchGUI.spec wird hingegen versioniert)
 build/
 dist/
+
+# Debug-Screenshots (nur lokal)
+Fehler*.png
