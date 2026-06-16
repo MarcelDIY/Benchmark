@@ -23,7 +23,8 @@ import threading
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, QObject, QThread, Signal, Slot
-from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QPainter, QPen)
+from PySide6.QtGui import (QAction, QBrush, QColor, QFont, QIcon, QLinearGradient,
+                           QPainter, QPainterPath, QPen)
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame,
     QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
@@ -36,16 +37,37 @@ import bench
 
 VERSION = "1.0"
 
-# --- Farb-Palette (Dark) ---
-BG = "#161a22"
-CARD = "#20262f"
-INPUT = "#2a313c"
-BORDER = "#333b47"
-TXT = "#e8ebf0"
-TXT2 = "#9aa6b8"
-TEAL = "#2dd4bf"
-AMBER = "#f5b14d"
-GREEN = "#45d488"
+# --- Farb-Palette (Tokyo Night, konsistent mit dem zweiten Gehirn) ---
+BG = "#16161e"      # Fenster
+CARD = "#1a1b26"    # Karten
+INPUT = "#1f2335"   # Eingaben / erhöhte Flächen
+BORDER = "#2a2e42"  # Haarlinie
+TRACK = "#222637"   # Balken-Spur
+TXT = "#c0caf5"
+TXT2 = "#565f89"
+BLUE = "#7aa2f7"
+CYAN = "#7dcfff"
+TEAL = "#73daca"
+GREEN = "#9ece6a"
+AMBER = "#e0af68"
+RED = "#f7768e"
+PURPLE = "#bb9af7"
+
+
+def _mono(size, bold=False):
+    f = QFont()
+    f.setStyleHint(QFont.Monospace)
+    f.setFamilies(["JetBrains Mono", "DejaVu Sans Mono", "Cascadia Code", "monospace"])
+    f.setPointSizeF(size)
+    f.setBold(bold)
+    return f
+
+
+def _grad(x1, y1, x2, y2, c0, c1):
+    g = QLinearGradient(x1, y1, x2, y2)
+    g.setColorAt(0.0, QColor(c0))
+    g.setColorAt(1.0, QColor(c1))
+    return QBrush(g)
 
 TASK_NAMES = {
     "zusammenfassen_prefill": "Zusammenfassen",
@@ -110,13 +132,13 @@ TABLE_COLS = [
 
 # ============================================================ Diagramm-Widgets ==
 class DonutChart(QWidget):
-    """Ringdiagramm: das Modell (100%) verteilt auf GPU (teal) und CPU (amber)."""
+    """Ringdiagramm: das Modell (100%) verteilt auf GPU (teal) + CPU (amber)."""
 
     def __init__(self):
         super().__init__()
         self._gpu = None
-        self.setMinimumHeight(150)
-        self.setMaximumHeight(180)
+        self.setMinimumHeight(132)
+        self.setMaximumHeight(150)
 
     def set_value(self, gpu_pct):
         self._gpu = gpu_pct
@@ -126,13 +148,13 @@ class DonutChart(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        d = min(w, h, 168) - 8
+        d = min(w, h, 134) - 6
         x, y = (w - d) / 2, (h - d) / 2
         rect = QRectF(x, y, d, d)
-        thick = max(13, d * 0.16)
+        thick = max(11, d * 0.15)
 
         if self._gpu is None:
-            p.setPen(QPen(QColor(BORDER), thick, Qt.SolidLine, Qt.FlatCap))
+            p.setPen(QPen(QColor(TRACK), thick, Qt.SolidLine, Qt.FlatCap))
             p.drawArc(rect, 0, 360 * 16)
             p.setPen(QColor(TXT2))
             p.setFont(QFont("", 9))
@@ -142,16 +164,21 @@ class DonutChart(QWidget):
         gpu = max(0, min(100, self._gpu))
         cpu = 100 - gpu
         gspan = 360 * gpu / 100
-        p.setPen(QPen(QColor(TEAL), thick, Qt.SolidLine, Qt.FlatCap))
-        p.drawArc(rect, 90 * 16, -int(gspan * 16))
-        p.setPen(QPen(QColor(AMBER), thick, Qt.SolidLine, Qt.FlatCap))
-        p.drawArc(rect, int((90 - gspan) * 16), -int((360 - gspan) * 16))
+        for col, start, span in ((TEAL, 90, -gspan), (AMBER, 90 - gspan, -(360 - gspan))):
+            if abs(span) < 0.1:
+                continue
+            glow = QColor(col)
+            glow.setAlpha(42)
+            p.setPen(QPen(glow, thick + 8, Qt.SolidLine, Qt.FlatCap))
+            p.drawArc(rect, int(start * 16), int(span * 16))
+            p.setPen(QPen(QColor(col), thick, Qt.SolidLine, Qt.FlatCap))
+            p.drawArc(rect, int(start * 16), int(span * 16))
 
-        p.setFont(QFont("", max(9, int(d * 0.11)), QFont.Bold))
+        p.setFont(_mono(d * 0.12, True))
         p.setPen(QColor(TEAL))
-        p.drawText(QRectF(x, y + d * 0.30, d, d * 0.20), Qt.AlignCenter, f"GPU {gpu}%")
+        p.drawText(QRectF(x, y + d * 0.28, d, d * 0.22), Qt.AlignCenter, f"GPU {gpu}%")
         p.setPen(QColor(AMBER))
-        p.drawText(QRectF(x, y + d * 0.50, d, d * 0.20), Qt.AlignCenter, f"CPU {cpu}%")
+        p.drawText(QRectF(x, y + d * 0.50, d, d * 0.22), Qt.AlignCenter, f"CPU {cpu}%")
 
 
 class BarChart(QWidget):
@@ -174,7 +201,7 @@ class BarChart(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        left, right, top, bottom = 10, 10, 24, 32
+        left, right, top, bottom = 10, 10, 40, 30
         plot = QRectF(left, top, w - left - right, h - top - bottom)
 
         if not self._bars:
@@ -184,41 +211,54 @@ class BarChart(QWidget):
                        "Aufgabe in der Tabelle wählen,\num die Läufe zu sehen.")
             return
 
+        if self._caption:
+            p.setPen(QColor(TXT2))
+            p.setFont(QFont("", 9))
+            p.drawText(QRectF(left, 3, w - 2 * left, 16), Qt.AlignLeft, self._caption)
+
         vals = [v for _, v, _ in self._bars if v is not None]
-        vmax = (max(vals + ([self._avg] if self._avg else []), default=1) or 1) * 1.18
+        vmax = (max(vals + ([self._avg] if self._avg else []), default=1) or 1) * 1.28
         n = len(self._bars)
         gap = 9
         bw = max(6, (plot.width() - gap * (n - 1)) / n)
 
+        # Durchschnittslinie
         if self._avg:
             ay = plot.bottom() - (self._avg / vmax) * plot.height()
-            p.setPen(QPen(QColor(TXT2), 1.3, Qt.DashLine))
+            p.setPen(QPen(QColor(TXT2), 1.2, Qt.DashLine))
             p.drawLine(QPointF(plot.left(), ay), QPointF(plot.right(), ay))
             p.setPen(QColor(TXT))
-            p.setFont(QFont("", 8, QFont.Bold))
-            p.drawText(QRectF(plot.left() + 2, ay - 15, plot.width(), 14),
+            p.setFont(_mono(8.5, True))
+            p.drawText(QRectF(plot.left() + 2, ay - 15, plot.width(), 13),
                        Qt.AlignLeft | Qt.AlignVCenter, f"Ø {self._fmt(self._avg)}")
 
         for i, (lbl, val, warm) in enumerate(self._bars):
             if val is None:
                 continue
             bx = plot.left() + i * (bw + gap)
-            bh = (val / vmax) * plot.height()
-            by = plot.bottom() - bh
+            # Spur
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor(AMBER) if warm else QColor(TEAL))
-            p.drawRoundedRect(QRectF(bx, by, bw, bh), 4, 4)
+            p.setBrush(QColor(TRACK))
+            p.drawRoundedRect(QRectF(bx, plot.top(), bw, plot.height()), 5, 5)
+            bh = max(2.0, (val / vmax) * plot.height())
+            by = plot.bottom() - bh
+            # Glow
+            glow = QColor(AMBER if warm else TEAL)
+            glow.setAlpha(55)
+            p.setBrush(glow)
+            p.drawRoundedRect(QRectF(bx - 1.5, by - 1.5, bw + 3, bh + 1.5), 6, 6)
+            # Balken mit Verlauf
+            p.setBrush(_grad(bx, by, bx, plot.bottom(), AMBER if warm else CYAN, RED if warm else TEAL))
+            p.drawRoundedRect(QRectF(bx, by, bw, bh), 5, 5)
+            # Wert (mono), mit Kopfraum
             p.setPen(QColor(TXT))
-            p.setFont(QFont("", 8))
-            p.drawText(QRectF(bx - 6, by - 17, bw + 12, 14), Qt.AlignCenter, self._fmt(val))
-            p.setPen(QColor(AMBER) if warm else QColor(TXT2))
+            p.setFont(_mono(8.5, True))
+            ly = max(plot.top() - 2, by - 16)
+            p.drawText(QRectF(bx - 8, ly, bw + 16, 14), Qt.AlignCenter, self._fmt(val))
+            # x-Label
+            p.setPen(QColor(AMBER if warm else TXT2))
             p.setFont(QFont("", 8, QFont.Bold if warm else QFont.Normal))
-            p.drawText(QRectF(bx - 6, plot.bottom() + 4, bw + 12, 16), Qt.AlignCenter, lbl)
-
-        if self._caption:
-            p.setPen(QColor(TXT2))
-            p.setFont(QFont("", 9))
-            p.drawText(QRectF(left, 2, plot.width(), 16), Qt.AlignLeft, self._caption)
+            p.drawText(QRectF(bx - 8, plot.bottom() + 3, bw + 16, 16), Qt.AlignCenter, lbl)
 
 
 class StatTile(QFrame):
@@ -417,10 +457,17 @@ class BenchWorker(QObject):
 
 
 # ================================================================ Hilfe-Dialog ==
-HELP_STYLE = (f"<style>body{{color:{TXT};font-size:10.5pt;}} h2,h3{{color:{TEAL};}}"
-              f"a{{color:{TEAL};}} code{{color:{AMBER};}}"
-              f"pre{{background:{BG};color:#d8dee9;padding:8px;border-radius:6px;"
-              "white-space:pre-wrap;}}</style>")
+HELP_STYLE = (
+    "<style>"
+    f"body{{color:{TXT};font-size:11pt;line-height:150%;}}"
+    f"h2{{color:{CYAN};font-size:17pt;margin:0 0 6px 0;}}"
+    f"h3{{color:{TEAL};font-size:12.5pt;margin:16px 0 2px 0;}}"
+    f"a{{color:{BLUE};text-decoration:none;}}"
+    f"code{{color:{AMBER};font-family:monospace;}}"
+    f"pre{{background:{BG};color:#a9b1d6;padding:10px;font-family:monospace;white-space:pre-wrap;}}"
+    f"li{{margin-bottom:5px;}} ol,ul{{margin-left:2px;}}"
+    f".lead{{color:{TXT2};}}"
+    "</style>")
 
 
 class HelpDialog(QDialog):
@@ -445,6 +492,7 @@ class HelpDialog(QDialog):
     def _page(htmltext):
         b = QTextBrowser()
         b.setOpenExternalLinks(True)
+        b.document().setDocumentMargin(18)
         b.setHtml(HELP_STYLE + htmltext)
         return b
 
@@ -520,14 +568,17 @@ class HelpDialog(QDialog):
     @staticmethod
     def _ueber():
         return (
-            f"<h2>Lokaler LLM-Benchmark</h2><p>Version {VERSION}</p>"
+            "<h2>Lokaler LLM-Benchmark</h2>"
+            f"<p class='lead'>Version {VERSION} · MIT-Lizenz · von Marcel Räuber</p>"
             "<p>Misst Geschwindigkeit (Prefill, Decode, Time-to-First-Token) und eine einfache "
-            "Qualitätsprüfung lokaler KI-Modelle über Ollama – um Hardware zu vergleichen: "
-            "<b>GPU-PC vs. Apple-Silicon-Mac vs. CPU&nbsp;+&nbsp;viel RAM</b>.</p>"
-            "<p>Kernidee: Genauigkeit hängt am Modell, nicht an der Hardware. Die Hardware-Frage "
-            "ist <b>Tempo + Preis + Speicher + Energie</b>.</p>"
-            "<p>Autor: Marcel Räuber · "
-            "<a href='https://github.com/MarcelDIY/Benchmark'>github.com/MarcelDIY/Benchmark</a></p>")
+            "Qualitätsprüfung lokaler KI-Modelle über Ollama – um Hardware zu vergleichen:</p>"
+            f"<p style='font-size:13pt'><b style='color:{TEAL}'>GPU-PC</b> &nbsp;·&nbsp; "
+            f"<b style='color:{BLUE}'>Apple-Silicon-Mac</b> &nbsp;·&nbsp; "
+            f"<b style='color:{AMBER}'>CPU&nbsp;+&nbsp;viel RAM</b></p>"
+            "<h3>Die Kernidee</h3>"
+            "<p>Genauigkeit hängt am <b>Modell</b>, nicht an der Hardware. Die Hardware-Frage ist "
+            "deshalb <b>Tempo + Preis + Speicher + Energie</b>.</p>"
+            "<p><a href='https://github.com/MarcelDIY/Benchmark'>github.com/MarcelDIY/Benchmark</a></p>")
 
 
 # ================================================================== Fenster =====
@@ -1038,6 +1089,9 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
+_CD = resource_path(os.path.join("assets", "caret-down.png")).replace("\\", "/")
+_CU = resource_path(os.path.join("assets", "caret-up.png")).replace("\\", "/")
+
 STYLESHEET = f"""
 QMainWindow, QDialog, QScrollArea {{ background: {BG}; }}
 QWidget {{ color: {TXT}; font-size: 10.5pt; }}
@@ -1055,25 +1109,36 @@ QPushButton {{
     background: {INPUT}; border: 1px solid {BORDER}; border-radius: 8px;
     padding: 7px 14px; color: {TXT};
 }}
-QPushButton:hover {{ border-color: {TEAL}; }}
-QPushButton:disabled {{ color: #5b6678; background: #232932; border-color: #2b313c; }}
-QPushButton#primary {{ background: {TEAL}; color: #08231f; border: none; font-weight: 700; }}
-QPushButton#primary:hover {{ background: #45e0cd; }}
-QPushButton#primary:disabled {{ background: #2a4a45; color: #5e7a75; }}
+QPushButton:hover {{ border-color: {TEAL}; color: {TEAL}; }}
+QPushButton:disabled {{ color: #3b4261; background: #181a26; border-color: #232742; }}
+QPushButton#primary {{ background: {TEAL}; color: #0e1018; border: none; font-weight: 700; }}
+QPushButton#primary:hover {{ background: #8ee6d8; }}
+QPushButton#primary:disabled {{ background: #2c4a45; color: #5e7a75; }}
 QPushButton#link {{ background: transparent; border: none; color: {TEAL}; text-align: left; padding: 2px; }}
+QPushButton#link:hover {{ color: {CYAN}; }}
 QLineEdit, QComboBox, QSpinBox {{
-    background: {INPUT}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px 8px; color: {TXT};
+    background: {INPUT}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px 9px; color: {TXT};
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {TEAL}; }}
-QComboBox::drop-down {{ border: none; width: 20px; }}
-QComboBox QAbstractItemView {{ background: {INPUT}; color: {TXT}; selection-background-color: {TEAL}; selection-color: #08231f; }}
+QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right;
+    width: 22px; border: none; }}
+QComboBox::down-arrow {{ image: url({_CD}); width: 13px; height: 13px; }}
+QComboBox QAbstractItemView {{ background: {INPUT}; color: {TXT}; border: 1px solid {BORDER};
+    selection-background-color: {BLUE}; selection-color: #0e1018; outline: none; }}
+QSpinBox::up-button {{ subcontrol-origin: border; subcontrol-position: top right; width: 18px;
+    border-left: 1px solid {BORDER}; border-top-right-radius: 8px; background: {INPUT}; }}
+QSpinBox::down-button {{ subcontrol-origin: border; subcontrol-position: bottom right; width: 18px;
+    border-left: 1px solid {BORDER}; border-bottom-right-radius: 8px; background: {INPUT}; }}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {{ background: {BORDER}; }}
+QSpinBox::up-arrow {{ image: url({_CU}); width: 11px; height: 11px; }}
+QSpinBox::down-arrow {{ image: url({_CD}); width: 11px; height: 11px; }}
 QProgressBar {{ background: {INPUT}; border: none; border-radius: 7px; min-height: 12px; }}
 QProgressBar::chunk {{ background: {TEAL}; border-radius: 7px; }}
 QFrame#tile {{ background: {INPUT}; border: 1px solid {BORDER}; border-radius: 10px; }}
 QTableWidget {{
     background: {CARD}; border: 1px solid {BORDER}; border-radius: 8px;
-    gridline-color: #2b313c; alternate-background-color: #242b35;
-    selection-background-color: #214a45; selection-color: {TXT};
+    gridline-color: {BORDER}; alternate-background-color: #1d1f2e;
+    selection-background-color: #283a57; selection-color: {TXT};
 }}
 QTableWidget::item {{ padding: 5px; }}
 QHeaderView::section {{
@@ -1081,22 +1146,27 @@ QHeaderView::section {{
     padding: 7px; font-weight: 600;
 }}
 QTableCornerButton::section {{ background: {INPUT}; border: none; }}
-QTextBrowser {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 6px; color: {TXT}; }}
-QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: 6px; top: -1px; }}
+QTextBrowser {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 8px; color: {TXT}; }}
+QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: 8px; top: -1px; }}
+QTabBar {{ qproperty-drawBase: 0; }}
 QTabBar::tab {{
-    background: {INPUT}; color: {TXT2}; padding: 7px 16px;
-    border-top-left-radius: 8px; border-top-right-radius: 8px; margin-right: 2px;
+    background: {INPUT}; color: {TXT2}; padding: 7px 18px;
+    border-top-left-radius: 8px; border-top-right-radius: 8px; margin-right: 3px;
 }}
-QTabBar::tab:selected {{ background: {TEAL}; color: #08231f; }}
+QTabBar::tab:selected {{ background: {TEAL}; color: #0e1018; font-weight: 700; }}
+QTabBar::tab:hover:!selected {{ color: {TXT}; }}
 QMenuBar {{ background: {CARD}; color: {TXT}; border-bottom: 1px solid {BORDER}; }}
-QMenuBar::item {{ padding: 6px 10px; background: transparent; }}
+QMenuBar::item {{ padding: 6px 12px; background: transparent; }}
 QMenuBar::item:selected {{ background: {INPUT}; }}
 QMenu {{ background: {CARD}; color: {TXT}; border: 1px solid {BORDER}; }}
 QMenu::item:selected {{ background: {INPUT}; }}
 QStatusBar {{ background: {CARD}; color: {TXT2}; }}
 QScrollBar:vertical {{ background: {BG}; width: 11px; margin: 0; }}
-QScrollBar::handle:vertical {{ background: #3a4250; border-radius: 5px; min-height: 24px; }}
-QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+QScrollBar::handle:vertical {{ background: {BORDER}; border-radius: 5px; min-height: 24px; }}
+QScrollBar::handle:vertical:hover {{ background: #3b4261; }}
+QScrollBar:horizontal {{ background: {BG}; height: 11px; margin: 0; }}
+QScrollBar::handle:horizontal {{ background: {BORDER}; border-radius: 5px; min-width: 24px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 QToolTip {{ background: {INPUT}; color: {TXT}; border: 1px solid {BORDER}; padding: 6px; }}
 """
 

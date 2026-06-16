@@ -77,6 +77,24 @@ def draw(size=256):
     return img
 
 
+def caret(up=False, color="#8089b3", size=16):
+    """Kleiner Chevron-Pfeil (für QComboBox/QSpinBox im Stylesheet)."""
+    img = QImage(size, size, QImage.Format_ARGB32)
+    img.fill(Qt.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(QColor(color), 2.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+    p.setPen(pen)
+    s = size / 16.0
+    if up:
+        pts = [QPointF(4.5 * s, 10 * s), QPointF(8 * s, 6.2 * s), QPointF(11.5 * s, 10 * s)]
+    else:
+        pts = [QPointF(4.5 * s, 6.2 * s), QPointF(8 * s, 10 * s), QPointF(11.5 * s, 6.2 * s)]
+    p.drawPolyline(QPolygonF(pts))
+    p.end()
+    return img
+
+
 def main():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     QGuiApplication(sys.argv)
@@ -85,7 +103,12 @@ def main():
     ico = os.path.join(HERE, "icon.ico")
     img.save(png, "PNG")
     img.save(ico, "ICO")
-    print(f"geschrieben: {png} ({os.path.getsize(png)} B), {ico} ({os.path.getsize(ico)} B)")
+    cd = os.path.join(HERE, "caret-down.png")
+    cu = os.path.join(HERE, "caret-up.png")
+    caret(up=False).save(cd, "PNG")
+    caret(up=True).save(cu, "PNG")
+    print(f"geschrieben: {png} ({os.path.getsize(png)} B), {ico} ({os.path.getsize(ico)} B), "
+          f"{cd}, {cu}")
 
 
 if __name__ == "__main__":
