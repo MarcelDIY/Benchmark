@@ -28,6 +28,19 @@ oder eine geliehene/gemietete 16-GB-GPU kommen.
   JSON-Extraktion, Doc-Q&A).
 - `README.md`, `docs/01-konzept.md`, `docs/02-recherche.md`, dieses Dokument.
 
+### Update (GUI)
+- `benchmark_gui.py` — grafisches Frontend (PySide6) für `bench.py`: Ollama-Host,
+  **„Modelle suchen"** (Scan installierter Modelle + Erreichbarkeits-Check), Modell-Dropdown,
+  Modus/Reps/Warmup/Label, **Test starten/Abbrechen** (eigener QThread, GUI friert nicht ein),
+  Live-Fortschritt + Log, Ergebnistabelle + **GESAMT**-Zeile, Export **CSV/MD/JSON**.
+- Einzige `bench.py`-Anpassung: `run_once(..., should_cancel=None)` für kooperativen Abbruch
+  (rückwärtskompatibel, CLI unverändert).
+- Standalone baubar mit PyInstaller (`BenchGUI.spec`, `packaging/build-*`), Doku in
+  `docs/04-gui.md`. Läuft auf Windows/macOS/Linux (pro OS separat bauen). **Ollama bleibt
+  externe Voraussetzung** (nicht gebündelt).
+- `requirements.txt` (PySide6, pyinstaller), `tests/test_bench.py` (13 Unit-Tests, grün).
+  Getestet: voller End-to-End-Lauf über die echten QThreads gegen Ollama (`llama3.2:3b`).
+
 ## Bereits vorhandene Ollama-Modelle (auf diesem Laptop)
 `llama3.1:8b`, `gemma3:4b`, `gemma3:12b` (+ Embeddings `bge-m3`, `nomic-embed-text`).
 → Diese könnten als Basis dienen, um Downloads zu sparen.

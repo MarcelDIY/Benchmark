@@ -47,14 +47,30 @@ Ergebnisse landen in `results/` als `summary_<label>_<zeit>.md` (Tabelle),
 `.csv` und `raw_*.csv` (jeder Einzellauf inkl. Modell-Antwort).
 **Die `summary`-Dateien zurückschicken** → daraus entsteht der Geräte-Vergleich.
 
+## GUI (optional)
+Statt der Kommandozeile gibt es ein grafisches Frontend mit Modell-Dropdown,
+„Modelle suchen"-Knopf, Live-Fortschritt, Ergebnistabelle und Export (CSV/MD/JSON):
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate    # fish: activate.fish
+pip install -r requirements.txt
+python benchmark_gui.py
+```
+
+Als Doppelklick-Programm (kein Python nötig) per PyInstaller baubar — Details und
+OS-Hinweise in [`docs/04-gui.md`](docs/04-gui.md). Ollama muss laufen.
+
 ## Dateien
 | Datei | Zweck |
 |---|---|
 | `bench.py` | Messläufer (Prefill, Decode, TTFT, Qualität) |
+| `benchmark_gui.py` | Grafische Oberfläche (PySide6) für `bench.py` |
 | `tasks.json` | Modell-Liste + 5 Büro-Aufgaben (hier anpassen) |
+| `BenchGUI.spec` | PyInstaller-Konfiguration für den Standalone-Build |
 | `docs/01-konzept.md` | Warum/Was: Konzept, 3 Pfade, Kennzahlen, Entscheidungsregel |
 | `docs/02-recherche.md` | Recherche: Hardware-/Modell-Zahlen, Methodik, Quellen |
 | `docs/03-status-handoff.md` | Aktueller Stand, getroffene Entscheidungen, offene Punkte |
+| `docs/04-gui.md` | GUI-Bedienung + Standalone-Bauen (Win/macOS/Linux) |
 
 ## Gemessene Kennzahlen
 - **Prefill** (t/s) – Verarbeitung langer Eingaben (rechenlastig)

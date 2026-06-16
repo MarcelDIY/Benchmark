@@ -44,8 +44,8 @@ def _req(path, payload=None, method="GET", stream=False, timeout=1800):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
-def http_json(path, payload=None, method="GET"):
-    with _req(path, payload, method) as r:
+def http_json(path, payload=None, method="GET", timeout=1800):
+    with _req(path, payload, method, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
@@ -57,9 +57,10 @@ def ollama_up():
         return False
 
 
-def installed_models():
+def installed_models(timeout=1800):
     try:
-        return sorted(m["name"] for m in http_json("/api/tags").get("models", []))
+        return sorted(m["name"] for m in
+                      http_json("/api/tags", timeout=timeout).get("models", []))
     except Exception:
         return []
 
@@ -82,8 +83,17 @@ def pull_model(name):
 
 
 # ----------------------------------------------------------- Messung ---------
-def run_once(model, prompt, num_predict, num_ctx, num_gpu, rep):
-    """Ein einzelner Lauf. Liefert TTFT, Prefill-/Decode-Durchsatz, Text."""
+def run_once(model, prompt, num_predict, num_ctx, num_gpu, rep, should_cancel=None,
+             on_response=None):
+    """Ein einzelner Lauf. Liefert TTFT, Prefill-/Decode-Durchsatz, Text.
+
+    should_cancel: optionales Callable () -> bool. Liefert es True, wird der
+    Stream sofort verlassen (kooperativer Abbruch aus der GUI). Default None
+    laesst das CLI-Verhalten unveraendert.
+    on_response: optionales Callable(resp). Erhaelt das offene HTTP-Response-
+    Objekt, sobald der Stream steht -- erlaubt der GUI, den blockierenden Read
+    bei Abbruch aktiv zu schliessen (auch waehrend Modell-Load/Prefill).
+    """
     # Cache-Buster: ein eindeutiger Praefix erzwingt echte Prompt-Auswertung
     # pro Lauf (sonst meldet Ollama prompt_eval_duration=0 bei Wiederholungen).
     busted = f"<!--lauf:{rep}-->\n{prompt}"
@@ -106,7 +116,12 @@ def run_once(model, prompt, num_predict, num_ctx, num_gpu, rep):
     final = None
     chunks = []
     with _req("/api/generate", payload, method="POST") as r:
+        if on_response is not None:
+            on_response(r)
         for line in r:
+            # Kooperativer Abbruch (GUI): Stream verlassen, Verbindung schliesst via with.
+            if should_cancel is not None and should_cancel():
+                break
             line = line.strip()
             if not line:
                 continue

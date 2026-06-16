@@ -11,3 +11,11 @@ ollama-models/
 __pycache__/
 *.pyc
 *.pyo
+
+# venv (lokale GUI-/Build-Umgebung)
+.venv/
+venv/
+
+# PyInstaller-Ausgaben (BenchGUI.spec wird hingegen versioniert)
+build/
+dist/
