@@ -144,7 +144,7 @@ Läufe, Warmup, Cache-Buster für echte Prefill-Messung.
 **Schnellster Weg – Starter (legt `.venv` an und installiert PySide6 beim ersten Start):**
 
 ```bash
-./start-linux.sh        # Linux/macOS
+./start-linux.sh        # Linux **und** macOS (bash-Skript)
 start-windows.bat       # Windows (Doppelklick)
 ```
 
