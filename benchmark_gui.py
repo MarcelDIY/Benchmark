@@ -1246,6 +1246,33 @@ QToolTip {{ background: {INPUT}; color: {TXT}; border: 1px solid {BORDER}; paddi
 """
 
 
+def apply_theme(app):
+    """Erzwingt ein dunkles Theme (Fusion + dunkle Palette + Stylesheet), damit die
+    App auf JEDEM System (auch hell-themed) und in Screenshots durchgehend dunkel ist."""
+    from PySide6.QtGui import QPalette
+    app.setStyle("Fusion")
+    pal = QPalette()
+    pal.setColor(QPalette.Window, QColor(BG))
+    pal.setColor(QPalette.WindowText, QColor(TXT))
+    pal.setColor(QPalette.Base, QColor(INPUT))
+    pal.setColor(QPalette.AlternateBase, QColor(CARD))
+    pal.setColor(QPalette.Text, QColor(TXT))
+    pal.setColor(QPalette.Button, QColor(INPUT))
+    pal.setColor(QPalette.ButtonText, QColor(TXT))
+    pal.setColor(QPalette.ToolTipBase, QColor(INPUT))
+    pal.setColor(QPalette.ToolTipText, QColor(TXT))
+    pal.setColor(QPalette.Highlight, QColor(BLUE))
+    pal.setColor(QPalette.HighlightedText, QColor(BG))
+    pal.setColor(QPalette.PlaceholderText, QColor(TXT2))
+    pal.setColor(QPalette.Disabled, QPalette.Text, QColor("#3b4261"))
+    pal.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#3b4261"))
+    app.setPalette(pal)
+    app.setStyleSheet(STYLESHEET)
+    ic = QIconSafe()
+    if ic:
+        app.setWindowIcon(ic)
+
+
 def main():
     if "--selftest" in sys.argv:
         with open(resource_path("tasks.json"), encoding="utf-8") as f:
@@ -1255,10 +1282,7 @@ def main():
         return
     app = QApplication(sys.argv)
     app.setApplicationName("LLM-Benchmark")
-    app.setStyleSheet(STYLESHEET)
-    ic = QIconSafe()
-    if ic:
-        app.setWindowIcon(ic)
+    apply_theme(app)
     win = MainWindow()
     win.show()
     sys.exit(app.exec())
