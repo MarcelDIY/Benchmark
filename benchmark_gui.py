@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Standalone-GUI für den lokalen Büro-LLM-Hardware-Benchmark.
+Standalone-GUI für den lokalen Büro-LLM-Hardware-Benchmark (Dark-Theme).
 
 Ein PySide6-Frontend für bench.py: Ollama-Host eingeben, mit "Modelle suchen" die
 lokal installierten Modelle ins Dropdown laden, eines auswählen, den Test durchlaufen
-lassen und Ergebnisse als Tabelle + Diagramme ansehen und exportieren.
+lassen und Ergebnisse als KPI-Kacheln, Tabelle + Diagramme ansehen und exportieren.
 
 Voraussetzung zur Laufzeit: ein laufendes Ollama (Standard http://localhost:11434).
 Ollama wird NICHT mitgebündelt – es ist eine externe Voraussetzung.
 
-Die Messung kommt unverändert aus bench.py (gleiche Zahlen wie das CLI). Läuft auf
-Windows, macOS und Linux; mit PyInstaller als Standalone baubar (siehe BenchGUI.spec).
+Die Messung kommt unverändert aus bench.py. Läuft auf Windows, macOS und Linux;
+mit PyInstaller als Standalone baubar (siehe BenchGUI.spec).
 """
 import html
 import json
@@ -23,27 +23,30 @@ import threading
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, QObject, QThread, Signal, Slot
-from PySide6.QtGui import (QAction, QBrush, QColor, QFont, QIcon, QLinearGradient,
-                           QPainter, QPen, QPolygonF)
+from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QPainter, QPen)
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-    QFrame, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy,
+    QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame,
+    QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
+    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
     QSpinBox, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QTextBrowser,
     QVBoxLayout, QWidget,
 )
 
-import bench  # Mess-Logik (run_once, agg, installed_models, system_info, _write_*, ...)
+import bench
 
 VERSION = "1.0"
 
-# Farben (passend zum Tacho-Icon)
-TEAL = "#16a394"
-NAVY = "#243b6b"
-AMBER = "#ffb44d"
-GREY = "#e6eaf1"
+# --- Farb-Palette (Dark) ---
+BG = "#161a22"
+CARD = "#20262f"
+INPUT = "#2a313c"
+BORDER = "#333b47"
+TXT = "#e8ebf0"
+TXT2 = "#9aa6b8"
+TEAL = "#2dd4bf"
+AMBER = "#f5b14d"
+GREEN = "#45d488"
 
-# Freundliche Namen für die Aufgaben-IDs.
 TASK_NAMES = {
     "zusammenfassen_prefill": "Zusammenfassen",
     "email_decode": "E-Mail schreiben",
@@ -57,9 +60,7 @@ def friendly(task_id):
     return TASK_NAMES.get(task_id, task_id)
 
 
-# --------------------------------------------------------- Pfade (auch frozen) --
 def resource_path(rel):
-    """Pfad zu GEBÜNDELTEN read-only-Ressourcen – Dev und PyInstaller."""
     if getattr(sys, "frozen", False):
         base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     else:
@@ -68,7 +69,6 @@ def resource_path(rel):
 
 
 def default_output_dir():
-    """Beschreibbarer Ordner für Exporte (neben der App / dem Skript)."""
     if getattr(sys, "frozen", False):
         base = os.path.dirname(sys.executable)
         if sys.platform == "darwin" and base.endswith("/Contents/MacOS"):
@@ -99,164 +99,160 @@ def safe_label(label):
     return out or "rechner"
 
 
-# Spalten der Ergebnistabelle: (Schlüssel der Summary-Zeile, sichtbares Label).
 TABLE_COLS = [
     ("task", "Aufgabe"),
     ("ttft_ms_med", "TTFT (ms)"),
     ("prefill_toks_med", "Prefill (t/s)"),
     ("decode_toks_med", "Decode (t/s)"),
-    ("decode_toks_p95", "Decode p95"),
     ("quality", "Qualität"),
 ]
 
 
 # ============================================================ Diagramm-Widgets ==
 class DonutChart(QWidget):
-    """Ringdiagramm für die GPU/CPU-Verteilung."""
+    """Ringdiagramm: das Modell (100%) verteilt auf GPU (teal) und CPU (amber)."""
 
     def __init__(self):
         super().__init__()
         self._gpu = None
-        self._mode = ""
-        self.setMinimumHeight(190)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(150)
+        self.setMaximumHeight(180)
 
-    def set_value(self, gpu_pct, mode=""):
+    def set_value(self, gpu_pct):
         self._gpu = gpu_pct
-        self._mode = mode
         self.update()
 
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        size = min(w, h) - 18
-        x, y = (w - size) / 2, (h - size) / 2
-        rect = QRectF(x, y, size, size)
-        thick = max(14, size * 0.16)
+        d = min(w, h, 168) - 8
+        x, y = (w - d) / 2, (h - d) / 2
+        rect = QRectF(x, y, d, d)
+        thick = max(13, d * 0.16)
 
         if self._gpu is None:
-            p.setPen(QPen(QColor(GREY), thick, Qt.SolidLine, Qt.FlatCap))
+            p.setPen(QPen(QColor(BORDER), thick, Qt.SolidLine, Qt.FlatCap))
             p.drawArc(rect, 0, 360 * 16)
-            p.setPen(QColor("#9aa6b8"))
-            p.setFont(QFont("", 10))
+            p.setPen(QColor(TXT2))
+            p.setFont(QFont("", 9))
             p.drawText(rect, Qt.AlignCenter, "noch\nkein Lauf")
             return
 
         gpu = max(0, min(100, self._gpu))
-        # Track (= CPU-Anteil) grau, GPU-Anteil teal. Start oben (90°), im Uhrzeigersinn.
-        p.setPen(QPen(QColor(GREY), thick, Qt.SolidLine, Qt.FlatCap))
-        p.drawArc(rect, 0, 360 * 16)
-        p.setPen(QPen(QColor(TEAL), thick, Qt.SolidLine, Qt.RoundCap))
-        p.drawArc(rect, 90 * 16, -int(360 * gpu / 100) * 16)
+        cpu = 100 - gpu
+        gspan = 360 * gpu / 100
+        p.setPen(QPen(QColor(TEAL), thick, Qt.SolidLine, Qt.FlatCap))
+        p.drawArc(rect, 90 * 16, -int(gspan * 16))
+        p.setPen(QPen(QColor(AMBER), thick, Qt.SolidLine, Qt.FlatCap))
+        p.drawArc(rect, int((90 - gspan) * 16), -int((360 - gspan) * 16))
 
-        p.setPen(QColor(NAVY))
-        p.setFont(QFont("", int(size * 0.16), QFont.Bold))
-        p.drawText(QRectF(x, y - size * 0.04, size, size), Qt.AlignCenter, f"{gpu}%")
-        p.setFont(QFont("", 9))
-        p.setPen(QColor("#5b6b82"))
-        p.drawText(QRectF(x, y + size * 0.16, size, size), Qt.AlignCenter, "auf GPU")
+        p.setFont(QFont("", max(9, int(d * 0.11)), QFont.Bold))
+        p.setPen(QColor(TEAL))
+        p.drawText(QRectF(x, y + d * 0.30, d, d * 0.20), Qt.AlignCenter, f"GPU {gpu}%")
+        p.setPen(QColor(AMBER))
+        p.drawText(QRectF(x, y + d * 0.50, d, d * 0.20), Qt.AlignCenter, f"CPU {cpu}%")
 
 
 class BarChart(QWidget):
-    """Balkendiagramm: ein Balken pro Lauf + Durchschnittslinie. Warmup separat."""
+    """Balkendiagramm: ein Balken pro Lauf + Durchschnittslinie. Warmup amber."""
 
     def __init__(self):
         super().__init__()
-        self._bars = []      # Liste (label, value, is_warmup)
+        self._bars = []
         self._avg = None
         self._fmt = lambda v: f"{v:.0f}"
         self._caption = ""
-        self.setMinimumHeight(200)
+        self.setMinimumHeight(150)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def set_data(self, bars, avg, fmt, caption=""):
-        self._bars = bars
-        self._avg = avg
-        self._fmt = fmt
-        self._caption = caption
+        self._bars, self._avg, self._fmt, self._caption = bars, avg, fmt, caption
         self.update()
 
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        left, right, top, bottom = 12, 12, 26, 34
+        left, right, top, bottom = 10, 10, 24, 32
         plot = QRectF(left, top, w - left - right, h - top - bottom)
 
         if not self._bars:
-            p.setPen(QColor("#9aa6b8"))
-            p.setFont(QFont("", 10))
+            p.setPen(QColor(TXT2))
+            p.setFont(QFont("", 9))
             p.drawText(self.rect(), Qt.AlignCenter,
-                       "Eine Aufgabe in der Tabelle wählen,\num die Läufe zu sehen.")
+                       "Aufgabe in der Tabelle wählen,\num die Läufe zu sehen.")
             return
 
         vals = [v for _, v, _ in self._bars if v is not None]
-        vmax = max(vals + ([self._avg] if self._avg else []), default=1) or 1
-        vmax *= 1.18
+        vmax = (max(vals + ([self._avg] if self._avg else []), default=1) or 1) * 1.18
         n = len(self._bars)
-        gap = 10
+        gap = 9
         bw = max(6, (plot.width() - gap * (n - 1)) / n)
 
-        # Durchschnittslinie
         if self._avg:
             ay = plot.bottom() - (self._avg / vmax) * plot.height()
-            pen = QPen(QColor(NAVY), 1.4, Qt.DashLine)
-            p.setPen(pen)
+            p.setPen(QPen(QColor(TXT2), 1.3, Qt.DashLine))
             p.drawLine(QPointF(plot.left(), ay), QPointF(plot.right(), ay))
-            p.setPen(QColor(NAVY))
+            p.setPen(QColor(TXT))
             p.setFont(QFont("", 8, QFont.Bold))
             p.drawText(QRectF(plot.left() + 2, ay - 15, plot.width(), 14),
                        Qt.AlignLeft | Qt.AlignVCenter, f"Ø {self._fmt(self._avg)}")
 
         for i, (lbl, val, warm) in enumerate(self._bars):
-            bx = plot.left() + i * (bw + gap)
             if val is None:
                 continue
+            bx = plot.left() + i * (bw + gap)
             bh = (val / vmax) * plot.height()
             by = plot.bottom() - bh
-            col = QColor(AMBER) if warm else QColor(TEAL)
             p.setPen(Qt.NoPen)
-            p.setBrush(col)
+            p.setBrush(QColor(AMBER) if warm else QColor(TEAL))
             p.drawRoundedRect(QRectF(bx, by, bw, bh), 4, 4)
-            # Wert über dem Balken
-            p.setPen(QColor("#3a4658"))
+            p.setPen(QColor(TXT))
             p.setFont(QFont("", 8))
-            p.drawText(QRectF(bx - 6, by - 18, bw + 12, 14), Qt.AlignCenter, self._fmt(val))
-            # x-Label
-            p.setPen(QColor("#7a8699" if not warm else AMBER))
+            p.drawText(QRectF(bx - 6, by - 17, bw + 12, 14), Qt.AlignCenter, self._fmt(val))
+            p.setPen(QColor(AMBER) if warm else QColor(TXT2))
             p.setFont(QFont("", 8, QFont.Bold if warm else QFont.Normal))
             p.drawText(QRectF(bx - 6, plot.bottom() + 4, bw + 12, 16), Qt.AlignCenter, lbl)
 
         if self._caption:
-            p.setPen(QColor("#5b6b82"))
+            p.setPen(QColor(TXT2))
             p.setFont(QFont("", 9))
-            p.drawText(QRectF(left, 2, plot.width(), 18), Qt.AlignLeft, self._caption)
+            p.drawText(QRectF(left, 2, plot.width(), 16), Qt.AlignLeft, self._caption)
+
+
+class StatTile(QFrame):
+    """Kompakte KPI-Kachel: großer Wert + Beschriftung."""
+
+    def __init__(self, caption, accent=TEAL):
+        super().__init__()
+        self.setObjectName("tile")
+        v = QVBoxLayout(self)
+        v.setContentsMargins(12, 9, 12, 9)
+        v.setSpacing(1)
+        self.val = QLabel("–")
+        self.val.setStyleSheet(f"color:{accent};font-size:18pt;font-weight:700;")
+        cap = QLabel(caption)
+        cap.setStyleSheet(f"color:{TXT2};font-size:9pt;")
+        v.addWidget(self.val)
+        v.addWidget(cap)
+
+    def set(self, text):
+        self.val.setText(text)
 
 
 # ================================================================ Benchmark =====
 class BenchWorker(QObject):
-    """Fährt den kompletten Benchmark für EIN Modell + EINEN Modus durch.
-
-    Läuft in einem eigenen Thread. Berührt NIE ein Widget – jede Ausgabe geht
-    ausschließlich über Signale an den GUI-Thread.
-    """
-
     log = Signal(str)
     progress = Signal(object)
-    task_row = Signal(object)   # {"summary": {...}, "detail": {...}|None}
+    task_row = Signal(object)
     finished = Signal(bool, str, object)
 
     def __init__(self, host, model, mode, reps, warmup, label, tasks, sys_info):
         super().__init__()
-        self.host = host
-        self.model = model
-        self.mode = mode
-        self.reps = reps
-        self.warmup = warmup
-        self.label = label
-        self.tasks = tasks
-        self.sys_info = sys_info
+        self.host, self.model, self.mode = host, model, mode
+        self.reps, self.warmup, self.label = reps, warmup, label
+        self.tasks, self.sys_info = tasks, sys_info
         self._cancel = threading.Event()
         self._active_resp = None
 
@@ -279,7 +275,6 @@ class BenchWorker(QObject):
             if not bench.ollama_up():
                 self.finished.emit(False, f"Ollama nicht erreichbar ({self.host})", {})
                 return
-
             model, mode = self.model, self.mode
             num_gpu = 0 if mode == "cpu" else None
             tasks, reps, warmup = self.tasks, self.reps, self.warmup
@@ -287,7 +282,6 @@ class BenchWorker(QObject):
             done = 0
             sum_rows = []
             comb = {"ttft": [], "prefill": [], "decode": [], "qual": []}
-
             self.log.emit(f"Start: {model} | {mode} | {len(tasks)} Aufgaben × {reps} "
                           f"Wiederholungen (+{warmup} Warmup)")
 
@@ -340,14 +334,12 @@ class BenchWorker(QObject):
 
                 if not samples:
                     continue
-
                 ttft_m, ttft_p = bench.agg([s["ttft_ms"] for s in samples])
                 pre_m, _ = bench.agg([s["prefill_toks"] for s in samples])
                 dec_m, dec_p = bench.agg([s["decode_toks"] for s in samples])
                 quals = [bench.quality_check(task, s["text"]) for s in samples]
                 quals = [x for x in quals if x is not None]
                 qrate = "" if not quals else f"{round(100 * sum(quals) / len(quals))}%"
-
                 row = {
                     "label": self.label, "model": model, "mode": mode, "task": tid,
                     "ttft_ms_med": bench._f(ttft_m, 0), "ttft_ms_p95": bench._f(ttft_p, 0),
@@ -366,7 +358,6 @@ class BenchWorker(QObject):
                                 "prefill_toks": warm["prefill_toks"]} if warm else None),
                 }
                 self.task_row.emit({"summary": row, "detail": detail})
-
                 comb["ttft"] += [s["ttft_ms"] for s in samples]
                 comb["prefill"] += [s["prefill_toks"] for s in samples]
                 comb["decode"] += [s["decode_toks"] for s in samples]
@@ -392,23 +383,17 @@ class BenchWorker(QObject):
 
             placement = self._placement(model) if sum_rows else {"gpu_pct": None}
             ok = (not cancelled) and bool(sum_rows)
-            if cancelled:
-                msg = "abgebrochen"
-            elif not sum_rows:
-                msg = "ohne Messwerte (Ollama/Modell prüfen)"
-            else:
-                msg = "fertig"
+            msg = ("abgebrochen" if cancelled else
+                   ("ohne Messwerte (Ollama/Modell prüfen)" if not sum_rows else "fertig"))
             payload = {
                 "rows": sum_rows, "sys_info": self.sys_info, "label": self.label,
                 "placement": placement,
-                "config": {
-                    "model": model, "mode": mode, "reps": reps, "warmup": warmup,
-                    "tasks": [t["id"] for t in tasks], "ollama": self.host,
-                    "aborted": cancelled, "gpu_pct": placement.get("gpu_pct"),
-                },
+                "config": {"model": model, "mode": mode, "reps": reps, "warmup": warmup,
+                           "tasks": [t["id"] for t in tasks], "ollama": self.host,
+                           "aborted": cancelled, "gpu_pct": placement.get("gpu_pct")},
             }
             self.finished.emit(ok, msg, payload)
-        except Exception as e:  # pragma: no cover - defensiv
+        except Exception as e:  # pragma: no cover
             self.finished.emit(False, f"Fehler: {e}", {})
 
     def _placement(self, model):
@@ -427,17 +412,22 @@ class BenchWorker(QObject):
         return {"gpu_pct": None, "vram_mb": None, "total_mb": None}
 
     def _emit_progress(self, done, total, tid, ti, tt, rep, rep_total):
-        self.progress.emit({"done": done, "total": total, "task": tid,
-                            "task_idx": ti, "task_total": tt, "rep": rep,
-                             "rep_total": rep_total})
+        self.progress.emit({"done": done, "total": total, "task": tid, "task_idx": ti,
+                            "task_total": tt, "rep": rep, "rep_total": rep_total})
 
 
 # ================================================================ Hilfe-Dialog ==
+HELP_STYLE = (f"<style>body{{color:{TXT};font-size:10.5pt;}} h2,h3{{color:{TEAL};}}"
+              f"a{{color:{TEAL};}} code{{color:{AMBER};}}"
+              f"pre{{background:{BG};color:#d8dee9;padding:8px;border-radius:6px;"
+              "white-space:pre-wrap;}}</style>")
+
+
 class HelpDialog(QDialog):
     def __init__(self, parent, tasks):
         super().__init__(parent)
         self.setWindowTitle("Hilfe & Infos")
-        self.resize(760, 640)
+        self.resize(740, 600)
         lay = QVBoxLayout(self)
         tabs = QTabWidget()
         tabs.addTab(self._page(self._bedienung()), "Bedienung")
@@ -455,36 +445,34 @@ class HelpDialog(QDialog):
     def _page(htmltext):
         b = QTextBrowser()
         b.setOpenExternalLinks(True)
-        b.setHtml(htmltext)
+        b.setHtml(HELP_STYLE + htmltext)
         return b
 
     @staticmethod
     def _bedienung():
         return (
-            "<h2>So benutzt du das Programm</h2>"
-            "<ol>"
+            "<h2>So benutzt du das Programm</h2><ol>"
             "<li><b>Ollama starten.</b> Das Programm misst lokale KI-Modelle über Ollama "
             "(<a href='https://ollama.com'>ollama.com</a>). Es muss laufen.</li>"
-            "<li><b>Host prüfen.</b> Standard ist <code>http://localhost:11434</code> "
-            "(dein Rechner). Für einen anderen Rechner im Netz dessen "
-            "<code>http://&lt;ip&gt;:11434</code> eintragen – dann wird DESSEN Hardware gemessen.</li>"
+            "<li><b>Host prüfen.</b> Standard <code>http://localhost:11434</code> (dein Rechner). "
+            "Für einen anderen Rechner im Netz dessen <code>http://&lt;ip&gt;:11434</code> "
+            "eintragen – dann wird DESSEN Hardware gemessen.</li>"
             "<li><b>Modelle suchen.</b> Füllt das Dropdown mit den installierten Modellen.</li>"
             "<li><b>Modell &amp; Modus wählen</b> (gpu/cpu), Wiederholungen und Warmup einstellen.</li>"
-            "<li><b>Test starten.</b> Es laufen alle Büro-Aufgaben durch. Du kannst jederzeit abbrechen.</li>"
-            "<li><b>Ergebnis ansehen.</b> Tabelle links; rechts die Diagramme (Ring = GPU/CPU-Verteilung, "
-            "Balken = einzelne Läufe). Klicke eine Aufgabe in der Tabelle, um ihre Läufe zu sehen.</li>"
-            "<li><b>Exportieren</b> als CSV, Markdown oder JSON.</li>"
-            "</ol>"
-            "<p><i>Tipp für einen schnellen ersten Eindruck: kleines Modell, Wiederholungen auf 1–2.</i></p>")
+            "<li><b>Test starten.</b> Es laufen alle Büro-Aufgaben durch. Jederzeit abbrechbar.</li>"
+            "<li><b>Ergebnis ansehen.</b> Oben die Kennzahlen, links die Tabelle, rechts die "
+            "Diagramme (Ring = GPU/CPU-Verteilung, Balken = einzelne Läufe). Klicke eine Aufgabe "
+            "in der Tabelle, um ihre Läufe zu sehen.</li>"
+            "<li><b>Exportieren</b> als CSV, Markdown oder JSON.</li></ol>"
+            "<p><i>Tipp für einen schnellen Eindruck: kleines Modell, Wiederholungen auf 1–2.</i></p>")
 
     @staticmethod
     def _begriffe():
         return (
             "<h2>Was gemessen wird</h2><ul>"
-            "<li><b>Prefill</b> (t/s): Tempo beim Verarbeiten der Eingabe "
-            "(rechenlastig, wichtig bei langen Texten).</li>"
-            "<li><b>Decode</b> (t/s): Tempo beim Erzeugen der Antwort "
-            "(bandbreitenlastig – hier trennen sich GPU und Mac).</li>"
+            "<li><b>Prefill</b> (t/s): Tempo beim Verarbeiten der Eingabe (rechenlastig).</li>"
+            "<li><b>Decode</b> (t/s): Tempo beim Erzeugen der Antwort (bandbreitenlastig – "
+            "hier trennen sich GPU und Mac).</li>"
             "<li><b>TTFT</b> (ms): Zeit bis zum ersten Token – die gefühlte Reaktionszeit.</li>"
             "<li><b>Qualität</b>: deterministischer Stichprobentest (nur bei prüfbaren Aufgaben).</li>"
             "<li><b>Median / p95</b>: typischer Wert bzw. nahe Worst-Case über die Wiederholungen.</li>"
@@ -494,8 +482,8 @@ class HelpDialog(QDialog):
             "<li><b>Warmup</b>: nicht gewerteter Vorlauf, der das Modell lädt. Der Kaltstart ist viel "
             "langsamer – im Balkendiagramm als oranger Balken sichtbar.</li>"
             "<li><b>Wiederholungen</b>: mehrere Messungen → stabiler Durchschnitt.</li>"
-            "<li><b>GPU/CPU-Verteilung</b>: nach dem Lauf zeigt der Ring, wie viel des Modells "
-            "tatsächlich im VRAM (GPU) lag.</li></ul>")
+            "<li><b>GPU/CPU-Verteilung</b>: der Ring zeigt, wie sich das Modell (100%) auf GPU "
+            "(VRAM) und CPU verteilt hat.</li></ul>")
 
     @staticmethod
     def _aufgaben(tasks):
@@ -512,14 +500,12 @@ class HelpDialog(QDialog):
             else:
                 qc = "keine (reine Tempo-Messung)"
             p.append(f"<h3>{esc(friendly(t.get('id')))} "
-                     f"<span style='color:#888;font-weight:normal'>({esc(t.get('id'))})</span></h3>")
+                     f"<span style='color:{TXT2};font-weight:normal'>({esc(t.get('id'))})</span></h3>")
             p.append(f"<p><i>{esc(t.get('beschreibung', ''))}</i></p>")
             p.append(f"<p>Kontext: {t.get('num_ctx', 4096)} Tokens &middot; "
                      f"max. Ausgabe: {t.get('num_predict', 256)} Tokens &middot; "
                      f"Qualitätsprüfung: {esc(qc)}</p>")
-            p.append("<p><b>Prompt:</b></p>"
-                     "<pre style='white-space:pre-wrap;background:#f4f4f4;padding:8px;"
-                     f"border-radius:6px;'>{esc(t.get('prompt', ''))}</pre>")
+            p.append(f"<p><b>Prompt:</b></p><pre>{esc(t.get('prompt', ''))}</pre>")
         return "".join(p)
 
     @staticmethod
@@ -529,16 +515,15 @@ class HelpDialog(QDialog):
                 text = f.read()
         except Exception:
             text = "MIT License – siehe LICENSE-Datei im Projekt."
-        return "<h2>Lizenz</h2><pre style='white-space:pre-wrap'>" + html.escape(text) + "</pre>"
+        return "<h2>Lizenz</h2><pre>" + html.escape(text) + "</pre>"
 
     @staticmethod
     def _ueber():
         return (
-            f"<h2>Lokaler LLM-Benchmark</h2>"
-            f"<p>Version {VERSION}</p>"
-            "<p>Misst Geschwindigkeit (Prefill, Decode, Time-to-First-Token) und eine "
-            "einfache Qualitätsprüfung lokaler KI-Modelle über Ollama – um Hardware zu "
-            "vergleichen: <b>GPU-PC vs. Apple-Silicon-Mac vs. CPU&nbsp;+&nbsp;viel RAM</b>.</p>"
+            f"<h2>Lokaler LLM-Benchmark</h2><p>Version {VERSION}</p>"
+            "<p>Misst Geschwindigkeit (Prefill, Decode, Time-to-First-Token) und eine einfache "
+            "Qualitätsprüfung lokaler KI-Modelle über Ollama – um Hardware zu vergleichen: "
+            "<b>GPU-PC vs. Apple-Silicon-Mac vs. CPU&nbsp;+&nbsp;viel RAM</b>.</p>"
             "<p>Kernidee: Genauigkeit hängt am Modell, nicht an der Hardware. Die Hardware-Frage "
             "ist <b>Tempo + Preis + Speicher + Energie</b>.</p>"
             "<p>Autor: Marcel Räuber · "
@@ -555,15 +540,18 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Lokaler LLM-Benchmark")
-        self.resize(1060, 820)
         _icon = QIcon(resource_path(os.path.join("assets", "icon.png")))
         if not _icon.isNull():
             self.setWindowIcon(_icon)
+        # an den Bildschirm anpassen (passt auch auf kleine Displays)
+        scr = QApplication.primaryScreen().availableGeometry()
+        self.resize(min(1040, int(scr.width() * 0.94)), min(880, int(scr.height() * 0.94)))
+        self.setMinimumSize(760, 500)
 
         self._thread = None
         self._worker = None
         self._last_payload = None
-        self._details = {}          # task_id -> detail-dict
+        self._details = {}
         self.sys_info = bench.system_info()
         self.tasks = self._load_tasks()
 
@@ -583,11 +571,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "tasks.json", f"Konnte tasks.json nicht laden:\n{e}")
             return []
 
-    # ---- Menü ----
     def _build_menu(self):
         m = self.menuBar().addMenu("&Hilfe")
         a = QAction("Handbuch && Infos …", self)
-        a.triggered.connect(self.show_help)
+        a.triggered.connect(lambda: self.show_help())
         m.addAction(a)
         m.addSeparator()
         ab = QAction("Über", self)
@@ -596,7 +583,6 @@ class MainWindow(QMainWindow):
 
     def show_help(self, *, tab=0):
         dlg = HelpDialog(self, self.tasks)
-        # zur gewünschten Registerkarte springen
         tabsw = dlg.findChild(QTabWidget)
         if tabsw and isinstance(tab, int):
             tabsw.setCurrentIndex(tab)
@@ -604,35 +590,38 @@ class MainWindow(QMainWindow):
 
     # ---- UI ----
     def _build_ui(self):
-        central = QWidget()
-        root = QVBoxLayout(central)
-        root.setSpacing(10)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        inner = QWidget()
+        root = QVBoxLayout(inner)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(9)
 
         # Verbindung
         conn_box = QGroupBox("Verbindung")
-        conn = QVBoxLayout(conn_box)
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Ollama-Host:"))
+        conn = QHBoxLayout(conn_box)
+        conn.addWidget(QLabel("Ollama-Host:"))
         self.host_edit = QLineEdit(os.environ.get("OLLAMA_HOST", "http://localhost:11434"))
         self.host_edit.setToolTip(
             "Adresse, unter der Ollama läuft.\nEigener Rechner: http://localhost:11434\n"
             "Anderer Rechner im Netz (misst DESSEN Hardware): http://<ip>:11434")
-        row1.addWidget(self.host_edit, 1)
+        conn.addWidget(self.host_edit, 1)
         self.scan_btn = QPushButton("Modelle suchen")
         self.scan_btn.clicked.connect(self.on_scan)
-        row1.addWidget(self.scan_btn)
-        conn.addLayout(row1)
+        conn.addWidget(self.scan_btn)
         self.status_label = QLabel("Noch nicht gescannt.")
-        self.status_label.setStyleSheet("color:#5b6b82;")
+        self.status_label.setStyleSheet(f"color:{TXT2};")
         conn.addWidget(self.status_label)
         root.addWidget(conn_box)
 
         # Parameter
         par_box = QGroupBox("Parameter")
         grid = QGridLayout(par_box)
-        grid.setHorizontalSpacing(18)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(8)
         self.model_combo = QComboBox()
-        self.model_combo.setMinimumWidth(240)
+        self.model_combo.setMinimumWidth(220)
         self.model_combo.setToolTip("Eines der in Ollama installierten Modelle.")
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["gpu", "cpu"])
@@ -649,7 +638,6 @@ class MainWindow(QMainWindow):
         self.warmup_spin.setToolTip("Nicht gewertete Vorläufe, die das Modell laden (Kaltstart).")
         self.label_edit = QLineEdit(platform.node() or "rechner")
         self.label_edit.setToolTip("Etikett für die Ergebnisse/Exportdateien (Gerätename).")
-
         grid.addWidget(QLabel("Modell:"), 0, 0)
         grid.addWidget(self.model_combo, 0, 1)
         grid.addWidget(QLabel("Modus:"), 0, 2)
@@ -659,18 +647,19 @@ class MainWindow(QMainWindow):
         grid.addWidget(QLabel("Warmup:"), 1, 2)
         grid.addWidget(self.warmup_spin, 1, 3)
         grid.addWidget(QLabel("Label:"), 2, 0)
-        grid.addWidget(self.label_edit, 2, 1, 1, 3)
-
-        btn_row = QHBoxLayout()
+        grid.addWidget(self.label_edit, 2, 1)
         self.start_btn = QPushButton("▶  Test starten")
         self.start_btn.setObjectName("primary")
         self.start_btn.clicked.connect(self.on_start)
         self.cancel_btn = QPushButton("Abbrechen")
         self.cancel_btn.clicked.connect(self.on_cancel)
-        btn_row.addStretch(1)
-        btn_row.addWidget(self.start_btn)
-        btn_row.addWidget(self.cancel_btn)
-        grid.addLayout(btn_row, 3, 0, 1, 4)
+        brow = QHBoxLayout()
+        brow.addStretch(1)
+        brow.addWidget(self.start_btn)
+        brow.addWidget(self.cancel_btn)
+        grid.addLayout(brow, 2, 2, 1, 2)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
         root.addWidget(par_box)
 
         # Fortschritt
@@ -680,28 +669,35 @@ class MainWindow(QMainWindow):
         self.prog_label.setStyleSheet("font-weight:600;")
         prog.addWidget(self.prog_label)
         self.prog_bar = QProgressBar()
-        self.prog_bar.setValue(0)
         self.prog_bar.setTextVisible(False)
         prog.addWidget(self.prog_bar)
         self.detail_btn = QPushButton("▸ Protokoll anzeigen")
-        self.detail_btn.setFlat(True)
-        self.detail_btn.setStyleSheet("text-align:left;color:#16a394;border:none;")
+        self.detail_btn.setObjectName("link")
         self.detail_btn.setCheckable(True)
         self.detail_btn.toggled.connect(self._toggle_log)
-        prog.addWidget(self.detail_btn)
+        prog.addWidget(self.detail_btn, 0, Qt.AlignLeft)
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(2000)
-        self.log_view.setFixedHeight(120)
+        self.log_view.setFixedHeight(110)
         self.log_view.setVisible(False)
         prog.addWidget(self.log_view)
         root.addWidget(prog_box)
 
-        # Ergebnisse: Tabelle | Diagramme
+        # Ergebnisse
         res_box = QGroupBox("Ergebnisse")
         res = QVBoxLayout(res_box)
-        split = QSplitter(Qt.Horizontal)
+        kpi = QHBoxLayout()
+        kpi.setSpacing(8)
+        self.tile_decode = StatTile("Decode Ø (t/s)")
+        self.tile_prefill = StatTile("Prefill Ø (t/s)")
+        self.tile_ttft = StatTile("TTFT (ms)")
+        self.tile_qual = StatTile("Qualität", GREEN)
+        for t in (self.tile_decode, self.tile_prefill, self.tile_ttft, self.tile_qual):
+            kpi.addWidget(t, 1)
+        res.addLayout(kpi)
 
+        split = QSplitter(Qt.Horizontal)
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
@@ -716,11 +712,12 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.itemSelectionChanged.connect(self.on_row_selected)
+        self.table.setMinimumHeight(150)
         ll.addWidget(self.table)
         legend = QLabel("Prefill = Eingabe-Tempo · Decode = Ausgabe-Tempo · "
                         "TTFT = Reaktionszeit · Qualität = Korrektheit")
         legend.setWordWrap(True)
-        legend.setStyleSheet("color:#7a8699;font-size:9pt;")
+        legend.setStyleSheet(f"color:{TXT2};font-size:9pt;")
         ll.addWidget(legend)
         split.addWidget(left)
 
@@ -733,7 +730,7 @@ class MainWindow(QMainWindow):
         self.placement_label = QLabel("")
         self.placement_label.setAlignment(Qt.AlignCenter)
         self.placement_label.setWordWrap(True)
-        self.placement_label.setStyleSheet(f"color:{TEAL};font-weight:600;")
+        self.placement_label.setStyleSheet(f"color:{TXT2};font-size:9pt;")
         rl.addWidget(self.placement_label)
         mrow = QHBoxLayout()
         mrow.addWidget(self._titled("Läufe je Aufgabe"))
@@ -748,8 +745,8 @@ class MainWindow(QMainWindow):
         split.addWidget(right)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
-        split.setSizes([640, 420])
-        res.addWidget(split)
+        split.setSizes([560, 420])
+        res.addWidget(split, 1)
 
         exp_row = QHBoxLayout()
         self.help_btn = QPushButton("Hilfe && Infos")
@@ -767,7 +764,8 @@ class MainWindow(QMainWindow):
         res.addLayout(exp_row)
         root.addWidget(res_box, 1)
 
-        self.setCentralWidget(central)
+        scroll.setWidget(inner)
+        self.setCentralWidget(scroll)
         self.statusBar().showMessage(
             f"System: {self.sys_info['os']} | {self.sys_info['cpu']} | "
             f"{self.sys_info['ram_gb']} GB RAM")
@@ -775,7 +773,7 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _titled(text):
         lab = QLabel(text)
-        lab.setStyleSheet("font-weight:600;color:#3a4658;")
+        lab.setStyleSheet(f"font-weight:600;color:{TXT};")
         return lab
 
     def _toggle_log(self, on):
@@ -811,7 +809,7 @@ class MainWindow(QMainWindow):
             return
         host = normalize_host(self.host_edit.text())
         self.host_edit.setText(host)
-        self.status_label.setText("Suche Modelle …")
+        self.status_label.setText("Suche …")
         self._set_state(self.SCANNING)
         QApplication.processEvents()
         bench.OLLAMA = host
@@ -823,10 +821,10 @@ class MainWindow(QMainWindow):
             self.status_label.setText(f"⚠ Scan fehlgeschlagen: {e}")
         else:
             if reachable:
-                msg = (f"✓ Ollama erreichbar – {len(models)} Modell(e)" if models
-                       else "✓ erreichbar, aber keine Modelle installiert")
+                msg = (f"✓ erreichbar – {len(models)} Modell(e)" if models
+                       else "✓ erreichbar, keine Modelle")
             else:
-                msg = f"⚠ nicht erreichbar unter {host}"
+                msg = "⚠ nicht erreichbar"
             self.status_label.setText(msg)
         prev = self.model_combo.currentText()
         self.model_combo.clear()
@@ -853,6 +851,8 @@ class MainWindow(QMainWindow):
         self.placement_label.setText("")
         self.donut.set_value(None)
         self.bars.set_data([], None, lambda v: f"{v}")
+        for t in (self.tile_decode, self.tile_prefill, self.tile_ttft, self.tile_qual):
+            t.set("–")
         self._last_payload = None
 
         self._worker = BenchWorker(
@@ -876,8 +876,6 @@ class MainWindow(QMainWindow):
         self._thread.start()
 
     def _clear_threads(self):
-        # Referenzen + Zustand erst hier lösen (nach thread.finished) – sonst Heap-Korruption
-        # bzw. "QThread destroyed while running".
         self._worker = None
         self._thread = None
         self._set_state(self.IDLE)
@@ -900,7 +898,8 @@ class MainWindow(QMainWindow):
             txt = (f"Aufgabe {d['task_idx']}/{d['task_total']}: {friendly(d['task'])} – "
                    f"Wiederholung {d['rep']}/{d['rep_total']}")
         else:
-            txt = f"Aufgabe {d['task_idx']}/{d['task_total']}: {friendly(d['task'])} – wärme Modell auf …"
+            txt = (f"Aufgabe {d['task_idx']}/{d['task_total']}: {friendly(d['task'])} – "
+                   "wärme Modell auf …")
         self.prog_label.setText(txt + f"   ({d['done']}/{d['total']} Messungen)")
 
     @Slot(object)
@@ -924,7 +923,7 @@ class MainWindow(QMainWindow):
                 f = item.font()
                 f.setBold(True)
                 item.setFont(f)
-                item.setBackground(QColor("#eef7f5"))
+                item.setForeground(QColor(TEAL))
             self.table.setItem(r, c, item)
 
     @Slot(bool, str, object)
@@ -933,16 +932,27 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Benchmark {msg}.")
         self.prog_label.setText("Fertig." if ok else f"Benchmark {msg}.")
         self._show_placement(payload)
-        # erste echte Aufgabe auswählen -> Balken zeigen
+        self._fill_kpis(payload)
         if self.table.rowCount():
             for r in range(self.table.rowCount()):
-                if self.table.item(r, 0) and self.table.item(r, 0).data(Qt.UserRole) != "GESAMT":
+                cell = self.table.item(r, 0)
+                if cell and cell.data(Qt.UserRole) != "GESAMT":
                     self.table.selectRow(r)
                     break
         rows = payload.get("rows") if payload else None
         if not rows and msg != "abgebrochen":
             QTimer.singleShot(0, lambda m=msg: QMessageBox.warning(
                 self, "Kein Ergebnis", m or "Unbekannter Fehler"))
+
+    def _fill_kpis(self, payload):
+        rows = (payload or {}).get("rows") or []
+        g = next((r for r in rows if r.get("task") == "GESAMT"), None) or (rows[0] if rows else None)
+        if not g:
+            return
+        self.tile_decode.set(f"{g.get('decode_toks_med', '–')}")
+        self.tile_prefill.set(f"{g.get('prefill_toks_med', '–')}")
+        self.tile_ttft.set(f"{g.get('ttft_ms_med', '–')}")
+        self.tile_qual.set(g.get("quality") or "n/a")
 
     def _show_placement(self, payload):
         pl = payload.get("placement") if payload else None
@@ -952,16 +962,10 @@ class MainWindow(QMainWindow):
             self.placement_label.setText("")
             return
         gp = pl["gpu_pct"]
-        self.donut.set_value(gp, cfg.get("mode", ""))
-        if gp >= 99:
-            wo = "komplett auf der GPU"
-        elif gp <= 1:
-            wo = "komplett auf der CPU"
-        else:
-            wo = f"hybrid: {gp}% GPU / {100 - gp}% CPU"
-        extra = (f"  ·  {pl['vram_mb']} von {pl['total_mb']} MB im VRAM"
+        self.donut.set_value(gp)
+        extra = (f"{pl['vram_mb']} von {pl['total_mb']} MB im VRAM · "
                  if pl.get("total_mb") else "")
-        self.placement_label.setText(f"Modell lief {wo} (Modus '{cfg.get('mode', '?')}'){extra}")
+        self.placement_label.setText(f"{extra}Modus '{cfg.get('mode', '?')}'")
 
     # ---- Diagramme ----
     def on_row_selected(self):
@@ -971,8 +975,7 @@ class MainWindow(QMainWindow):
         items = self.table.selectedItems()
         if not items:
             return None
-        row = items[0].row()
-        cell = self.table.item(row, 0)
+        cell = self.table.item(items[0].row(), 0)
         return cell.data(Qt.UserRole) if cell else None
 
     def _update_charts(self):
@@ -980,15 +983,13 @@ class MainWindow(QMainWindow):
         _name, reps_key, warm_key, fmt = self.METRICS[self.metric_combo.currentIndex()]
         detail = self._details.get(tid)
         if not detail:
-            self.bars.set_data([], None, fmt,
-                               "GESAMT" if tid == "GESAMT" else "")
+            self.bars.set_data([], None, fmt, "GESAMT" if tid == "GESAMT" else "")
             return
         bars = []
         warm = detail.get("warmup")
         if warm and warm.get(warm_key) is not None:
             bars.append(("Warmup", warm[warm_key], True))
-        reps = detail.get(reps_key, []) or []
-        for i, v in enumerate(reps):
+        for i, v in enumerate(detail.get(reps_key, []) or []):
             bars.append((f"#{i + 1}", v, False))
         valid = [v for _, v, w in bars if (not w) and v is not None]
         avg = statistics.mean(valid) if valid else None
@@ -1025,7 +1026,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Export fehlgeschlagen", str(e))
 
-    # ---- Beenden ----
     def closeEvent(self, event):
         if self._worker is not None and hasattr(self._worker, "request_cancel"):
             self._worker.request_cancel()
@@ -1038,51 +1038,66 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
-STYLESHEET = """
-QMainWindow, QDialog { background: #eef1f6; }
-QWidget { color: #1f2733; font-size: 10.5pt; }
-QGroupBox {
-    background: #ffffff; border: 1px solid #e1e6ee; border-radius: 12px;
-    margin-top: 12px; padding: 10px 14px 12px 14px; font-weight: 600;
-}
-QGroupBox::title { subcontrol-origin: margin; left: 14px; padding: 0 5px; color: #5b6b82; }
-QLabel { background: transparent; }
-QPushButton {
-    background: #ffffff; border: 1px solid #c9d2e0; border-radius: 8px;
-    padding: 7px 14px; color: #243b6b;
-}
-QPushButton:hover { border-color: #16a394; }
-QPushButton:disabled { color: #aeb7c4; background: #f1f3f7; border-color: #e1e6ee; }
-QPushButton#primary { background: #16a394; color: #ffffff; border: none; font-weight: 700; }
-QPushButton#primary:hover { background: #139184; }
-QPushButton#primary:disabled { background: #bcdcd7; color: #f0fbf9; }
-QLineEdit, QComboBox, QSpinBox {
-    background: #ffffff; border: 1px solid #c9d2e0; border-radius: 8px; padding: 6px 8px;
-}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border: 1px solid #16a394; }
-QComboBox::drop-down { border: none; width: 20px; }
-QProgressBar { background: #e6eaf1; border: none; border-radius: 8px; min-height: 14px; }
-QProgressBar::chunk { background: #16a394; border-radius: 8px; }
-QTableWidget {
-    background: #ffffff; border: 1px solid #e9edf3; border-radius: 8px;
-    gridline-color: #f0f2f7; alternate-background-color: #f7f9fc;
-    selection-background-color: #d3efe9; selection-color: #0c4a43;
-}
-QTableWidget::item { padding: 5px; }
-QHeaderView::section {
-    background: #f0f3f8; color: #5b6b82; border: none;
-    border-bottom: 2px solid #e1e6ee; padding: 7px; font-weight: 600;
-}
-QTabBar::tab {
-    background: #e6eaf1; color: #3a4658; padding: 7px 16px;
+STYLESHEET = f"""
+QMainWindow, QDialog, QScrollArea {{ background: {BG}; }}
+QWidget {{ color: {TXT}; font-size: 10.5pt; }}
+QScrollArea {{ border: none; }}
+QGroupBox {{
+    background: {CARD}; border: 1px solid {BORDER}; border-radius: 12px;
+    margin-top: 16px; padding: 14px 14px 12px 14px; font-weight: 600;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin; subcontrol-position: top left; left: 14px; top: 1px;
+    padding: 1px 8px; color: {TXT2}; background: transparent;
+}}
+QLabel {{ background: transparent; }}
+QPushButton {{
+    background: {INPUT}; border: 1px solid {BORDER}; border-radius: 8px;
+    padding: 7px 14px; color: {TXT};
+}}
+QPushButton:hover {{ border-color: {TEAL}; }}
+QPushButton:disabled {{ color: #5b6678; background: #232932; border-color: #2b313c; }}
+QPushButton#primary {{ background: {TEAL}; color: #08231f; border: none; font-weight: 700; }}
+QPushButton#primary:hover {{ background: #45e0cd; }}
+QPushButton#primary:disabled {{ background: #2a4a45; color: #5e7a75; }}
+QPushButton#link {{ background: transparent; border: none; color: {TEAL}; text-align: left; padding: 2px; }}
+QLineEdit, QComboBox, QSpinBox {{
+    background: {INPUT}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px 8px; color: {TXT};
+}}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {TEAL}; }}
+QComboBox::drop-down {{ border: none; width: 20px; }}
+QComboBox QAbstractItemView {{ background: {INPUT}; color: {TXT}; selection-background-color: {TEAL}; selection-color: #08231f; }}
+QProgressBar {{ background: {INPUT}; border: none; border-radius: 7px; min-height: 12px; }}
+QProgressBar::chunk {{ background: {TEAL}; border-radius: 7px; }}
+QFrame#tile {{ background: {INPUT}; border: 1px solid {BORDER}; border-radius: 10px; }}
+QTableWidget {{
+    background: {CARD}; border: 1px solid {BORDER}; border-radius: 8px;
+    gridline-color: #2b313c; alternate-background-color: #242b35;
+    selection-background-color: #214a45; selection-color: {TXT};
+}}
+QTableWidget::item {{ padding: 5px; }}
+QHeaderView::section {{
+    background: {INPUT}; color: {TXT2}; border: none; border-bottom: 2px solid {BORDER};
+    padding: 7px; font-weight: 600;
+}}
+QTableCornerButton::section {{ background: {INPUT}; border: none; }}
+QTextBrowser {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 6px; color: {TXT}; }}
+QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: 6px; top: -1px; }}
+QTabBar::tab {{
+    background: {INPUT}; color: {TXT2}; padding: 7px 16px;
     border-top-left-radius: 8px; border-top-right-radius: 8px; margin-right: 2px;
-}
-QTabBar::tab:selected { background: #16a394; color: #ffffff; }
-QMenuBar { background: #ffffff; border-bottom: 1px solid #e1e6ee; }
-QMenuBar::item { padding: 6px 10px; }
-QMenuBar::item:selected { background: #e6f4f1; }
-QStatusBar { background: #ffffff; color: #5b6b82; }
-QToolTip { background: #243b6b; color: #ffffff; border: none; padding: 6px; }
+}}
+QTabBar::tab:selected {{ background: {TEAL}; color: #08231f; }}
+QMenuBar {{ background: {CARD}; color: {TXT}; border-bottom: 1px solid {BORDER}; }}
+QMenuBar::item {{ padding: 6px 10px; background: transparent; }}
+QMenuBar::item:selected {{ background: {INPUT}; }}
+QMenu {{ background: {CARD}; color: {TXT}; border: 1px solid {BORDER}; }}
+QMenu::item:selected {{ background: {INPUT}; }}
+QStatusBar {{ background: {CARD}; color: {TXT2}; }}
+QScrollBar:vertical {{ background: {BG}; width: 11px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: #3a4250; border-radius: 5px; min-height: 24px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+QToolTip {{ background: {INPUT}; color: {TXT}; border: 1px solid {BORDER}; padding: 6px; }}
 """
 
 
