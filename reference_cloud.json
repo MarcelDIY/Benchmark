@@ -1,0 +1,8 @@
+{
+  "_note": "Cloud-Referenz (Richtwerte). Tempo (Decode t/s, TTFT) ist CA. – typische Werte der Anbieter-Server, NICHT auf deiner Hardware gemessen und je nach Auslastung schwankend. Die Qualitaet wurde an den 2 pruefbaren Bueroaufgaben (Dokument-Frage, JSON-Extraktion) mit Claude-Code-Agenten real gemessen: Opus, Sonnet und Haiku je 100%. Werte hier anpassbar.",
+  "models": [
+    {"name": "Claude Haiku (Cloud)",  "model": "Claude Haiku",  "decode": 110, "ttft": 500, "qual_pct": 100, "quality": "100%"},
+    {"name": "Claude Sonnet (Cloud)", "model": "Claude Sonnet", "decode": 70,  "ttft": 600, "qual_pct": 100, "quality": "100%"},
+    {"name": "Claude Opus (Cloud)",   "model": "Claude Opus",   "decode": 45,  "ttft": 900, "qual_pct": 100, "quality": "100%"}
+  ]
+}

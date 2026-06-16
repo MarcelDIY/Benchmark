@@ -111,6 +111,15 @@ def _num(v):
         return None
 
 
+def _pct(v):
+    """'100%' -> 100.0, '' / None -> None."""
+    try:
+        s = str(v).strip().rstrip("%")
+        return float(s) if s not in ("", "None") else None
+    except ValueError:
+        return None
+
+
 TABLE_COLS = [
     ("task", "Aufgabe"),
     ("ttft_ms_med", "TTFT (ms)"),
@@ -210,6 +219,8 @@ class BenchWorker(QObject):
             done = 0
             sum_rows = []
             comb = {"ttft": [], "prefill": [], "decode": [], "qual": []}
+            total_wall = 0.0
+            cold_start_ms = None
             self.log.emit(f"Start: {model} | {mode} | {len(tasks)} Aufgaben × {reps} "
                           f"Wiederholungen (+{warmup} Warmup)")
 
@@ -231,6 +242,9 @@ class BenchWorker(QObject):
                                             on_response=self._set_resp)
                         if w == 0:
                             warm = wr
+                        total_wall += wr.get("wall_s", 0) or 0
+                        if cold_start_ms is None and wr.get("ttft_ms") is not None:
+                            cold_start_ms = wr["ttft_ms"]
                     except Exception as e:
                         self.log.emit(f"  Warmup-Fehler: {e}")
 
@@ -252,6 +266,9 @@ class BenchWorker(QObject):
                         break
                     q = bench.quality_check(task, r["text"])
                     samples.append(r)
+                    total_wall += r.get("wall_s", 0) or 0
+                    if cold_start_ms is None and r.get("ttft_ms") is not None:
+                        cold_start_ms = r["ttft_ms"]
                     done += 1
                     self._emit_progress(done, total, tid, ti + 1, len(tasks), rep + 1, reps)
                     self.log.emit(
@@ -316,6 +333,7 @@ class BenchWorker(QObject):
             payload = {
                 "rows": sum_rows, "sys_info": self.sys_info, "label": self.label,
                 "placement": placement,
+                "cold_start_ms": cold_start_ms, "total_wall_s": round(total_wall, 1),
                 "config": {"model": model, "mode": mode, "reps": reps, "warmup": warmup,
                            "tasks": [t["id"] for t in tasks], "ollama": self.host,
                            "aborted": cancelled, "gpu_pct": placement.get("gpu_pct")},
@@ -480,8 +498,14 @@ class MainWindow(QMainWindow):
     CMP_METRICS = [("Decode (t/s)", "decode", 1, "höher = besser"),
                    ("Prefill (t/s)", "prefill", 0, "höher = besser"),
                    ("TTFT (ms)", "ttft", 0, "niedriger = besser"),
-                   ("GPU-Anteil (%)", "gpu_pct", 0, "Anteil im VRAM")]
-    CMP_COLS = ["Modell", "Modus", "Label", "Decode", "Prefill", "TTFT", "GPU%", "Qualität"]
+                   ("Decode p95 (t/s)", "decode_p95", 1, "höher = besser · Konsistenz"),
+                   ("Qualität (%)", "qual_pct", 0, "höher = besser"),
+                   ("Kaltstart (s)", "kaltstart", 1, "niedriger = besser · Modell-Ladezeit"),
+                   ("Speicherbedarf (MB)", "groesse", 0, "kleiner = passt eher in den VRAM"),
+                   ("Gesamtdauer (s)", "dauer", 0, "niedriger = besser · ganzer Lauf"),
+                   ("GPU-Anteil (%)", "gpu_pct", 0, "Anteil des Modells im VRAM")]
+    CMP_COLS = ["Modell", "Modus", "Label", "Decode", "Prefill", "TTFT", "Dec p95",
+                "GPU%", "Qual", "Kaltstart", "Größe (MB)", "Dauer (s)"]
 
     def __init__(self):
         super().__init__()
@@ -733,6 +757,11 @@ class MainWindow(QMainWindow):
         self.cmp_combo.currentIndexChanged.connect(lambda _i: self._refresh_compare())
         top.addWidget(self.cmp_combo)
         top.addStretch(1)
+        self.ref_btn = QPushButton("☁ Cloud-Referenz einblenden")
+        self.ref_btn.setToolTip("Richtwerte für Claude Opus/Sonnet/Haiku einblenden.\n"
+                                "Tempo ca. (Anbieter-Server, nicht deine Hardware); Qualität gemessen.")
+        self.ref_btn.clicked.connect(self.on_toggle_reference)
+        top.addWidget(self.ref_btn)
         self.clear_runs_btn = QPushButton("Läufe zurücksetzen")
         self.clear_runs_btn.clicked.connect(self.on_clear_runs)
         top.addWidget(self.clear_runs_btn)
@@ -749,6 +778,11 @@ class MainWindow(QMainWindow):
         self.cmp_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.cmp_table.setMinimumHeight(120)
         lay.addWidget(self.cmp_table)
+        note = QLabel("☁ = Cloud-Referenz (Tempo ca., nicht auf deiner Hardware gemessen, "
+                      "Qualität gemessen). Starte mehrere Modelle, um lokale Läufe zu sammeln.")
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color:{TXT2};font-size:9pt;")
+        lay.addWidget(note)
         self._refresh_compare()
         return page
 
@@ -983,6 +1017,8 @@ class MainWindow(QMainWindow):
         if not g:
             return
         cfg = payload.get("config", {})
+        cold = payload.get("cold_start_ms")
+        pl = payload.get("placement", {}) or {}
         rec = {
             "name": f"{cfg.get('model', '?')} @ {cfg.get('mode', '?')}",
             "model": cfg.get("model", "?"), "mode": cfg.get("mode", "?"),
@@ -990,8 +1026,14 @@ class MainWindow(QMainWindow):
             "decode": _num(g.get("decode_toks_med")),
             "prefill": _num(g.get("prefill_toks_med")),
             "ttft": _num(g.get("ttft_ms_med")),
+            "decode_p95": _num(g.get("decode_toks_p95")),
             "gpu_pct": cfg.get("gpu_pct"),
             "quality": g.get("quality") or "",
+            "qual_pct": _pct(g.get("quality")),
+            "kaltstart": (round(cold / 1000, 1) if cold else None),
+            "groesse": pl.get("total_mb"),
+            "dauer": payload.get("total_wall_s"),
+            "is_reference": False,
         }
         self._runs.append(rec)
         self.tabs.setTabText(1, f"Vergleich ({len(self._runs)})")
@@ -1001,9 +1043,42 @@ class MainWindow(QMainWindow):
         if not self._runs:
             return
         self._runs.clear()
+        self.ref_btn.setText("☁ Cloud-Referenz einblenden")
         self.tabs.setTabText(1, "Vergleich (0)")
         self._refresh_compare()
         self._set_state(self._state)
+
+    def on_toggle_reference(self):
+        if any(r.get("is_reference") for r in self._runs):
+            self._runs = [r for r in self._runs if not r.get("is_reference")]
+            self.ref_btn.setText("☁ Cloud-Referenz einblenden")
+        else:
+            self._runs.extend(self._load_reference())
+            self.ref_btn.setText("☁ Cloud-Referenz ausblenden")
+        self.tabs.setTabText(1, f"Vergleich ({len(self._runs)})")
+        self._refresh_compare()
+        if self._state == self.IDLE:
+            self.clear_runs_btn.setEnabled(bool(self._runs))
+
+    def _load_reference(self):
+        try:
+            with open(resource_path("reference_cloud.json"), encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            return []
+        out = []
+        for m in data.get("models", []):
+            out.append({
+                "name": m.get("name", m.get("model", "?")),
+                "model": m.get("model", "?"), "mode": "cloud", "label": "Referenz",
+                "decode": m.get("decode"), "prefill": m.get("prefill"),
+                "ttft": m.get("ttft"), "decode_p95": m.get("decode_p95"),
+                "gpu_pct": None, "quality": m.get("quality", ""),
+                "qual_pct": m.get("qual_pct"), "kaltstart": m.get("kaltstart"),
+                "groesse": m.get("groesse"), "dauer": m.get("dauer"),
+                "is_reference": True,
+            })
+        return out
 
     def _refresh_compare(self):
         name, key, dec, hint = self.CMP_METRICS[self.cmp_combo.currentIndex()]
@@ -1012,23 +1087,29 @@ class MainWindow(QMainWindow):
             v = rec.get(key)
             if v is None:
                 continue
-            items.append((rec["name"], float(v), SC.CYCLE[i % len(SC.CYCLE)]))
+            col = CYAN if rec.get("is_reference") else SC.CYCLE[i % len(SC.CYCLE)]
+            items.append((rec["name"], float(v), col))
         cap = f"Modell-Vergleich – {name}"
-        unit = hint
-        self.cmp_view.set_gen(lambda w, h: SC.compare(items, dec, unit, cap, w, h))
+        self.cmp_view.set_gen(lambda w, h: SC.compare(items, dec, hint, cap, w, h))
         # Tabelle
         self.cmp_table.setRowCount(0)
         for rec in self._runs:
             r = self.cmp_table.rowCount()
             self.cmp_table.insertRow(r)
-            vals = [rec["model"], rec["mode"], rec["label"],
-                    _fmt(rec["decode"], 1), _fmt(rec["prefill"], 0), _fmt(rec["ttft"], 0),
+            vals = [rec["model"], rec["mode"], rec.get("label", ""),
+                    _fmt(rec.get("decode"), 1), _fmt(rec.get("prefill"), 0),
+                    _fmt(rec.get("ttft"), 0), _fmt(rec.get("decode_p95"), 1),
                     (f"{rec['gpu_pct']}%" if rec.get("gpu_pct") is not None else "–"),
-                    rec["quality"] or "–"]
+                    rec.get("quality") or "–",
+                    _fmt(rec.get("kaltstart"), 1), _fmt(rec.get("groesse"), 0),
+                    _fmt(rec.get("dauer"), 0)]
+            ref = rec.get("is_reference")
             for c, val in enumerate(vals):
                 item = QTableWidgetItem(str(val))
                 if c >= 3:
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                if ref:
+                    item.setForeground(QColor(CYAN))
                 self.cmp_table.setItem(r, c, item)
 
     # ---- Export ----

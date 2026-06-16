@@ -18,7 +18,7 @@ a = Analysis(
     ['benchmark_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('tasks.json', '.'), ('LICENSE', '.'),
+    datas=[('tasks.json', '.'), ('LICENSE', '.'), ('reference_cloud.json', '.'),
            ('assets/icon.png', 'assets'),
            ('assets/caret-down.png', 'assets'), ('assets/caret-up.png', 'assets')],
     hiddenimports=[],
