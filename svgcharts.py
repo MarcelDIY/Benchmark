@@ -132,7 +132,7 @@ def runs(bars, avg, dec, caption, w, h):
         s.append("</svg>")
         return "\n".join(s)
 
-    left, right, top, bottom = 14, 14, 32, 30
+    left, right, top, bottom = 14, 60, 32, 30   # rechter Rand: Platz für Ø-Wert neben der Linie
     pw, ph = w - left - right, h - top - bottom
     base = top + ph
     vals = [v for _, v, _ in bars if v is not None]
@@ -163,19 +163,16 @@ def runs(bars, avg, dec, caption, w, h):
         s.append(_txt(bx + bw / 2, by - 6, fmt(val), TEXT, 11, "700", anchor="middle", mono=True))
         s.append(_txt(bx + bw / 2, base + 16, lbl, ORANGE if warm else MUTED,
                       10.5, "700" if warm else "400", anchor="middle"))
-    # Durchschnittslinie ÜBER den Balken (kräftig, mit dunkler Unterlage) + Badge rechts
+    # Durchschnittslinie ÜBER den Balken (kräftig, mit dunkler Unterlage); Ø-Wert
+    # NEBEN dem rechten Ende der Linie – im freien rechten Rand, ohne Balken-Überlappung.
     if avg:
         ay = base - (avg / vmax) * ph
         s.append(f'<line x1="{left}" y1="{ay:.1f}" x2="{left+pw}" y2="{ay:.1f}" '
                  f'stroke="{BG}" stroke-width="3.4" opacity="0.55"/>')
         s.append(f'<line x1="{left}" y1="{ay:.1f}" x2="{left+pw}" y2="{ay:.1f}" '
                  f'stroke="{PURPLE}" stroke-width="1.9" stroke-dasharray="6 4"/>')
-        txt = f"Ø {fmt(avg)}"
-        bwid = 16 + len(txt) * 6.7
-        bxr = left + pw - bwid
-        byr = ay - 20 if (ay - 20) > top else ay + 5
-        s.append(f'<rect x="{bxr:.1f}" y="{byr:.1f}" width="{bwid:.1f}" height="17" rx="5" fill="{PURPLE}"/>')
-        s.append(_txt(bxr + bwid / 2, byr + 12.5, txt, BG, 10.5, "800", anchor="middle", mono=True))
+        s.append(f'<circle cx="{left+pw:.1f}" cy="{ay:.1f}" r="3" fill="{PURPLE}"/>')
+        s.append(_txt(left + pw + 7, ay + 4, f"Ø {fmt(avg)}", PURPLE, 10.5, "800", mono=True))
     s.append("</svg>")
     return "\n".join(s)
 
