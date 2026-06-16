@@ -1,0 +1,13 @@
+# Mess-Ergebnisse (maschinenspezifisch, werden neu erzeugt)
+results/
+
+# Ollama-Modelle (liegen normalerweise ausserhalb, zur Sicherheit ignoriert)
+ollama-models/
+
+# Claude Code lokale Einstellungen
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
