@@ -18,7 +18,7 @@ a = Analysis(
     ['benchmark_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('tasks.json', '.'), ('assets/icon.png', 'assets')],
+    datas=[('tasks.json', '.'), ('assets/icon.png', 'assets'), ('LICENSE', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
