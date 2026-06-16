@@ -132,11 +132,11 @@ def runs(bars, avg, dec, caption, w, h):
         s.append("</svg>")
         return "\n".join(s)
 
-    left, right, top, bottom = 14, 14, 34, 30
+    left, right, top, bottom = 14, 14, 32, 30
     pw, ph = w - left - right, h - top - bottom
     base = top + ph
     vals = [v for _, v, _ in bars if v is not None]
-    vmax = (max(vals + ([avg] if avg else []), default=1) or 1) * 1.28
+    vmax = (max(vals + ([avg] if avg else []), default=1) or 1) * 1.40
     n = len(bars)
     gap = 10
     bw = max(7, (pw - gap * (n - 1)) / n)
@@ -148,12 +148,6 @@ def runs(bars, avg, dec, caption, w, h):
     for i in range(n):
         bx = left + i * (bw + gap)
         s.append(f'<rect x="{bx:.1f}" y="{top}" width="{bw:.1f}" height="{ph}" rx="6" fill="{TRACK}"/>')
-    # Durchschnittslinie
-    if avg:
-        ay = base - (avg / vmax) * ph
-        s.append(f'<line x1="{left}" y1="{ay:.1f}" x2="{left+pw}" y2="{ay:.1f}" '
-                 f'stroke="{MUTED}" stroke-width="1.2" stroke-dasharray="5 4"/>')
-        s.append(_txt(left + 2, ay - 5, f"Ø {fmt(avg)}", TEXT, 11, "700", mono=True))
     # Balken
     for i, (lbl, val, warm) in enumerate(bars):
         if val is None:
@@ -166,10 +160,22 @@ def runs(bars, avg, dec, caption, w, h):
         s.append(f'<rect x="{bx-1.5:.1f}" y="{by-1.5:.1f}" width="{bw+3:.1f}" height="{bh+1.5:.1f}" '
                  f'rx="7" fill="{col}" opacity="0.22" filter="url(#soft)"/>')
         s.append(f'<rect x="{bx:.1f}" y="{by:.1f}" width="{bw:.1f}" height="{bh:.1f}" rx="6" fill="{grad}"/>')
-        ly = max(top - 2, by - 6)
-        s.append(_txt(bx + bw / 2, ly, fmt(val), TEXT, 11, "700", anchor="middle", mono=True))
+        s.append(_txt(bx + bw / 2, by - 6, fmt(val), TEXT, 11, "700", anchor="middle", mono=True))
         s.append(_txt(bx + bw / 2, base + 16, lbl, ORANGE if warm else MUTED,
                       10.5, "700" if warm else "400", anchor="middle"))
+    # Durchschnittslinie ÜBER den Balken (kräftig, mit dunkler Unterlage) + Badge rechts
+    if avg:
+        ay = base - (avg / vmax) * ph
+        s.append(f'<line x1="{left}" y1="{ay:.1f}" x2="{left+pw}" y2="{ay:.1f}" '
+                 f'stroke="{BG}" stroke-width="3.4" opacity="0.55"/>')
+        s.append(f'<line x1="{left}" y1="{ay:.1f}" x2="{left+pw}" y2="{ay:.1f}" '
+                 f'stroke="{PURPLE}" stroke-width="1.9" stroke-dasharray="6 4"/>')
+        txt = f"Ø {fmt(avg)}"
+        bwid = 16 + len(txt) * 6.7
+        bxr = left + pw - bwid
+        byr = ay - 20 if (ay - 20) > top else ay + 5
+        s.append(f'<rect x="{bxr:.1f}" y="{byr:.1f}" width="{bwid:.1f}" height="17" rx="5" fill="{PURPLE}"/>')
+        s.append(_txt(bxr + bwid / 2, byr + 12.5, txt, BG, 10.5, "800", anchor="middle", mono=True))
     s.append("</svg>")
     return "\n".join(s)
 

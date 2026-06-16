@@ -1,5 +1,5 @@
 {
-  "_kommentar": "Konfiguration fuer den Buero-Benchmark. Modelle = Ollama-Namen. Grosse Modelle sind optional (erst aktivieren, wenn genug Platz/RAM da ist).",
+  "_kommentar": "Konfiguration für den Büro-Benchmark. Modelle = Ollama-Namen. Große Modelle sind optional (erst aktivieren, wenn genug Platz/RAM da ist).",
   "reps": 5,
   "warmup": 1,
   "models": [
@@ -14,40 +14,40 @@
   "tasks": [
     {
       "id": "zusammenfassen_prefill",
-      "beschreibung": "Langer Input -> testet Prefill (Verarbeitung). Buero: Protokoll zusammenfassen.",
+      "beschreibung": "Langer Input → testet Prefill (Verarbeitung). Büro: Protokoll zusammenfassen.",
       "num_ctx": 8192,
       "num_predict": 200,
-      "prompt": "Fasse das folgende Besprechungsprotokoll in fuenf praegnanten Stichpunkten auf Deutsch zusammen. Nenne nur die wichtigsten Entscheidungen und offenen Aufgaben.\n\n--- PROTOKOLL ---\nProjekt: Einfuehrung der neuen Dokumentenmanagement-Loesung (DMS) im Bereich Vertrieb. Datum: 12. Maerz. Teilnehmende: Frau Berger (Projektleitung), Herr Conrad (IT), Frau Demir (Vertrieb), Herr Engel (Datenschutz), Frau Falk (Einkauf).\n\nFrau Berger eroeffnet die Sitzung und fasst den Stand zusammen: Die Pilotphase mit 15 Nutzerinnen und Nutzern im Vertrieb-Innendienst ist abgeschlossen. Das Feedback war ueberwiegend positiv, die Volltextsuche und die automatische Verschlagwortung wurden besonders gelobt. Kritisiert wurde die langsame Ladezeit beim Oeffnen grosser PDF-Dateien sowie die unuebersichtliche Rechteverwaltung.\n\nHerr Conrad berichtet aus der IT: Die Ladezeiten haengen an der aktuellen Server-Anbindung; ein Wechsel auf den neuen Applikationsserver ist fuer Kalenderwoche 16 geplant und sollte das Problem loesen. Die Rechteverwaltung wird mit dem Hersteller ueberarbeitet, ein Update ist fuer Ende April angekuendigt. Herr Conrad weist darauf hin, dass fuer den Produktivbetrieb zusaetzlich 1,5 TB Speicher beschafft werden muessen.\n\nFrau Demir betont, dass der Vertrieb die flaechendeckende Einfuehrung bis spaetestens 1. Juni benoetigt, weil danach die Hochsaison beginnt und keine Schulungen mehr moeglich sind. Sie schlaegt vor, die Schulungen in zwei Wellen durchzufuehren: Aussendienst zuerst, Innendienst danach.\n\nHerr Engel meldet aus Datenschutzsicht Klaerungsbedarf an: Die automatische Verschlagwortung verarbeitet personenbezogene Daten aus Angebotsdokumenten. Es fehlt noch eine aktualisierte Datenschutz-Folgenabschaetzung. Ohne diese darf der Produktivbetrieb nicht starten. Er sagt zu, einen Entwurf bis zum 25. Maerz vorzulegen.\n\nFrau Falk weist darauf hin, dass die Lizenzbeschaffung fuer 120 Nutzer noch nicht final freigegeben ist; das Angebot des Herstellers liegt bei 84.000 Euro jaehrlich. Der Einkauf will eine Vergleichsausschreibung pruefen, was den Zeitplan gefaehrden koennte. Frau Berger bittet darum, die Ausschreibung nur zu pruefen, falls der Termin 1. Juni nicht gefaehrdet wird.\n\nAls naechste Schritte werden festgehalten: Serverwechsel KW16 (Conrad), Update Rechteverwaltung Ende April (Conrad/Hersteller), Datenschutz-Folgenabschaetzung bis 25. Maerz (Engel), Schulungskonzept in zwei Wellen (Demir), Klaerung Lizenzbeschaffung bis 31. Maerz (Falk). Naechster Termin: 26. Maerz, 10 Uhr.\n--- ENDE PROTOKOLL ---"
+      "prompt": "Fasse das folgende Besprechungsprotokoll in fünf prägnanten Stichpunkten auf Deutsch zusammen. Nenne nur die wichtigsten Entscheidungen und offenen Aufgaben.\n\n--- PROTOKOLL ---\nProjekt: Einführung der neuen Dokumentenmanagement-Lösung (DMS) im Bereich Vertrieb. Datum: 12. März. Teilnehmende: Frau Berger (Projektleitung), Herr Conrad (IT), Frau Demir (Vertrieb), Herr Engel (Datenschutz), Frau Falk (Einkauf).\n\nFrau Berger eröffnet die Sitzung und fasst den Stand zusammen: Die Pilotphase mit 15 Nutzerinnen und Nutzern im Vertrieb-Innendienst ist abgeschlossen. Das Feedback war überwiegend positiv, die Volltextsuche und die automatische Verschlagwortung wurden besonders gelobt. Kritisiert wurde die langsame Ladezeit beim Öffnen großer PDF-Dateien sowie die unübersichtliche Rechteverwaltung.\n\nHerr Conrad berichtet aus der IT: Die Ladezeiten hängen an der aktuellen Server-Anbindung; ein Wechsel auf den neuen Applikationsserver ist für Kalenderwoche 16 geplant und sollte das Problem lösen. Die Rechteverwaltung wird mit dem Hersteller überarbeitet, ein Update ist für Ende April angekündigt. Herr Conrad weist darauf hin, dass für den Produktivbetrieb zusätzlich 1,5 TB Speicher beschafft werden müssen.\n\nFrau Demir betont, dass der Vertrieb die flächendeckende Einführung bis spätestens 1. Juni benötigt, weil danach die Hochsaison beginnt und keine Schulungen mehr möglich sind. Sie schlägt vor, die Schulungen in zwei Wellen durchzuführen: Außendienst zuerst, Innendienst danach.\n\nHerr Engel meldet aus Datenschutzsicht Klärungsbedarf an: Die automatische Verschlagwortung verarbeitet personenbezogene Daten aus Angebotsdokumenten. Es fehlt noch eine aktualisierte Datenschutz-Folgenabschätzung. Ohne diese darf der Produktivbetrieb nicht starten. Er sagt zu, einen Entwurf bis zum 25. März vorzulegen.\n\nFrau Falk weist darauf hin, dass die Lizenzbeschaffung für 120 Nutzer noch nicht final freigegeben ist; das Angebot des Herstellers liegt bei 84.000 Euro jährlich. Der Einkauf will eine Vergleichsausschreibung prüfen, was den Zeitplan gefährden könnte. Frau Berger bittet darum, die Ausschreibung nur zu prüfen, falls der Termin 1. Juni nicht gefährdet wird.\n\nAls nächste Schritte werden festgehalten: Serverwechsel KW16 (Conrad), Update Rechteverwaltung Ende April (Conrad/Hersteller), Datenschutz-Folgenabschätzung bis 25. März (Engel), Schulungskonzept in zwei Wellen (Demir), Klärung Lizenzbeschaffung bis 31. März (Falk). Nächster Termin: 26. März, 10 Uhr.\n--- ENDE PROTOKOLL ---"
     },
     {
       "id": "email_decode",
-      "beschreibung": "Kurzer Input, lange Ausgabe -> testet Decode (Generierung). Buero: E-Mail verfassen.",
+      "beschreibung": "Kurzer Input, lange Ausgabe → testet Decode (Generierung). Büro: E-Mail verfassen.",
       "num_ctx": 4096,
       "num_predict": 400,
-      "prompt": "Schreibe eine hoefliche, professionelle E-Mail auf Deutsch an einen Kunden namens Herr Schmidt. Inhalt: Wir muessen den vereinbarten Liefertermin fuer seine Bestellung (Nr. 4471) wegen eines Lieferengpasses um zehn Tage verschieben, bieten als Entschuldigung einen Rabatt von 5 Prozent an und sichern zu, dass wir uns bei weiteren Verzoegerungen sofort melden. Halte die E-Mail freundlich, klar strukturiert und nicht laenger als 200 Woerter."
+      "prompt": "Schreibe eine höfliche, professionelle E-Mail auf Deutsch an einen Kunden namens Herr Schmidt. Inhalt: Wir müssen den vereinbarten Liefertermin für seine Bestellung (Nr. 4471) wegen eines Lieferengpasses um zehn Tage verschieben, bieten als Entschuldigung einen Rabatt von 5 Prozent an und sichern zu, dass wir uns bei weiteren Verzögerungen sofort melden. Halte die E-Mail freundlich, klar strukturiert und nicht länger als 200 Wörter."
     },
     {
       "id": "uebersetzen",
-      "beschreibung": "Uebersetzung DE->EN. Buero-typisch, gemischte Last.",
+      "beschreibung": "Übersetzung DE→EN. Büro-typisch, gemischte Last.",
       "num_ctx": 4096,
       "num_predict": 300,
-      "prompt": "Uebersetze den folgenden deutschen Geschaeftstext praezise ins Englische. Behalte den foermlichen Ton bei.\n\nSehr geehrte Damen und Herren, wir bestaetigen den Eingang Ihrer Anfrage vom 10. dieses Monats. Nach Pruefung Ihrer Unterlagen koennen wir Ihnen ein unverbindliches Angebot bis Ende der kommenden Woche zusenden. Fuer Rueckfragen stehen wir Ihnen jederzeit gerne zur Verfuegung. Mit freundlichen Gruessen, die Geschaeftsleitung."
+      "prompt": "Übersetze den folgenden deutschen Geschäftstext präzise ins Englische. Behalte den förmlichen Ton bei.\n\nSehr geehrte Damen und Herren, wir bestätigen den Eingang Ihrer Anfrage vom 10. dieses Monats. Nach Prüfung Ihrer Unterlagen können wir Ihnen ein unverbindliches Angebot bis Ende der kommenden Woche zusenden. Für Rückfragen stehen wir Ihnen jederzeit gerne zur Verfügung. Mit freundlichen Grüßen, die Geschäftsleitung."
     },
     {
       "id": "extrahieren_json",
-      "beschreibung": "Strukturierte Extraktion -> deterministisch pruefbar (Qualitaets-Smoketest).",
+      "beschreibung": "Strukturierte Extraktion → deterministisch prüfbar (Qualitäts-Smoketest).",
       "num_ctx": 4096,
       "num_predict": 300,
       "check_keys": ["rechnungsnummer", "kunde", "betrag_euro", "faellig_am"],
-      "prompt": "Extrahiere aus dem folgenden Text die Felder als JSON-Objekt mit genau diesen Schluesseln: rechnungsnummer, kunde, betrag_euro, faellig_am. Antworte ausschliesslich mit dem JSON, ohne weitere Erklaerung.\n\nText: Die Rechnung RG-2024-0815 fuer die Firma Mustermann GmbH ueber einen Betrag von 2.480,50 Euro ist bis zum 30.04.2024 zu begleichen. Bei Fragen wenden Sie sich an die Buchhaltung."
+      "prompt": "Extrahiere aus dem folgenden Text die Felder als JSON-Objekt mit genau diesen Schlüsseln: rechnungsnummer, kunde, betrag_euro, faellig_am. Antworte ausschließlich mit dem JSON, ohne weitere Erklärung.\n\nText: Die Rechnung RG-2024-0815 für die Firma Mustermann GmbH über einen Betrag von 2.480,50 Euro ist bis zum 30.04.2024 zu begleichen. Bei Fragen wenden Sie sich an die Buchhaltung."
     },
     {
       "id": "doc_qa",
-      "beschreibung": "Frage zu einem bereitgestellten Dokument -> Prefill + Genauigkeit.",
+      "beschreibung": "Frage zu einem bereitgestellten Dokument → Prefill + Genauigkeit.",
       "num_ctx": 8192,
       "num_predict": 120,
-      "expect_contains": "25. Maerz",
-      "prompt": "Beantworte die Frage ausschliesslich anhand des folgenden Dokuments in einem kurzen Satz.\n\nDokument: In der Sitzung wurde vereinbart, dass Herr Engel die aktualisierte Datenschutz-Folgenabschaetzung bis zum 25. Maerz vorlegt. Der Serverwechsel erfolgt in Kalenderwoche 16. Die Lizenzfrage klaert Frau Falk bis zum 31. Maerz.\n\nFrage: Bis wann muss die Datenschutz-Folgenabschaetzung vorgelegt werden?"
+      "expect_contains": "25. März",
+      "prompt": "Beantworte die Frage ausschließlich anhand des folgenden Dokuments in einem kurzen Satz.\n\nDokument: In der Sitzung wurde vereinbart, dass Herr Engel die aktualisierte Datenschutz-Folgenabschätzung bis zum 25. März vorlegt. Der Serverwechsel erfolgt in Kalenderwoche 16. Die Lizenzfrage klärt Frau Falk bis zum 31. März.\n\nFrage: Bis wann muss die Datenschutz-Folgenabschätzung vorgelegt werden?"
     }
   ]
 }
