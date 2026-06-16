@@ -22,7 +22,7 @@ import sys
 import threading
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
+from PySide6.QtCore import QObject, QThread, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
@@ -454,8 +454,11 @@ class MainWindow(QMainWindow):
 
     # ---- Scan ----
     def _auto_scan_on_start(self):
-        # Beim Start einmal automatisch scannen (bequem); blockiert nicht.
-        self.on_scan()
+        # Beim Start automatisch scannen -- aber ERST, wenn die Event-Loop laeuft und
+        # das Fenster steht. Den Scan-Thread schon im __init__ (vor app.exec/show()) zu
+        # starten, fuehrt auf xcb zu einem Race -> Segfault. singleShot(0) verschiebt
+        # den Start auf die erste Event-Loop-Iteration.
+        QTimer.singleShot(0, self.on_scan)
 
     def on_scan(self):
         if self._state != self.IDLE:
