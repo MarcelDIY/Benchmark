@@ -92,31 +92,6 @@ TABLE_COLS = [
 
 
 # ------------------------------------------------------------------- Worker -----
-class ScanWorker(QObject):
-    """Prueft kurz, ob Ollama erreichbar ist, und holt die installierten Modelle."""
-
-    done = Signal(bool, object, str)  # erreichbar, list[str] modelle, statustext
-
-    def __init__(self, host):
-        super().__init__()
-        self.host = host
-
-    @Slot()
-    def run(self):
-        try:
-            bench.OLLAMA = self.host  # Modul-Global wird zur Aufrufzeit gelesen
-            up = bench.ollama_up()
-            if not up:
-                self.done.emit(False, [], f"Ollama NICHT erreichbar unter {self.host}")
-                return
-            models = bench.installed_models(timeout=6)  # kurz halten: Schliessen darf nicht haengen
-            msg = (f"Ollama erreichbar - {len(models)} Modell(e) gefunden"
-                   if models else "Ollama erreichbar, aber keine Modelle installiert")
-            self.done.emit(True, models, msg)
-        except Exception as e:  # pragma: no cover - defensiv
-            self.done.emit(False, [], f"Fehler beim Scan: {e}")
-
-
 class BenchWorker(QObject):
     """Faehrt den kompletten Benchmark fuer EIN Modell + EINEN Modus durch.
 
@@ -515,35 +490,38 @@ class MainWindow(QMainWindow):
 
     # ---- Scan ----
     def _auto_scan_on_start(self):
-        # Beim Start automatisch scannen -- aber ERST, wenn die Event-Loop laeuft und
-        # das Fenster steht. Den Scan-Thread schon im __init__ (vor app.exec/show()) zu
-        # starten, fuehrt auf xcb zu einem Race -> Segfault. singleShot(0) verschiebt
-        # den Start auf die erste Event-Loop-Iteration.
+        # Beim Start automatisch scannen, aber erst auf der ersten Event-Loop-Iteration
+        # (Fenster steht, Status-Text ist sichtbar). Der Scan selbst laeuft synchron.
         QTimer.singleShot(0, self.on_scan)
 
     def on_scan(self):
+        """Scan laeuft SYNCHRON: ein kurzer HTTP-Aufruf (lokal Millisekunden, bei
+        unerreichbarem Host durch Timeout begrenzt). Bewusst kein Thread -- der
+        QThread-Lebenszyklus ist auf manchen Qt-Builds fragil, und ein Scan ist zu
+        kurz, um dafuer einen Thread zu rechtfertigen."""
         if self._state != self.IDLE:
             return
         host = normalize_host(self.host_edit.text())
         self.host_edit.setText(host)
         self.status_label.setText("Suche Modelle ...")
         self._set_state(self.SCANNING)
+        QApplication.processEvents()  # Status-Text zeigen, bevor wir kurz blockieren
 
-        self._worker = ScanWorker(host)
-        self._thread = QThread(self)
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
-        self._worker.done.connect(self.on_scan_done)
-        self._worker.done.connect(self._thread.quit)
-        self._worker.done.connect(self._worker.deleteLater)
-        self._thread.finished.connect(self._thread.deleteLater)
-        self._thread.start()
+        bench.OLLAMA = host
+        try:
+            reachable = bench.ollama_up()
+            models = bench.installed_models(timeout=6) if reachable else []
+        except Exception as e:
+            reachable, models = False, []
+            self.status_label.setText(f"FEHLER - Scan fehlgeschlagen: {e}")
+        else:
+            if reachable:
+                msg = (f"{len(models)} Modell(e) gefunden" if models
+                       else "erreichbar, aber keine Modelle installiert")
+            else:
+                msg = f"NICHT erreichbar unter {host}"
+            self.status_label.setText(("OK - " if reachable else "FEHLER - ") + msg)
 
-    @Slot(bool, object, str)
-    def on_scan_done(self, reachable, models, msg):
-        self._thread = None
-        self._worker = None
-        self.status_label.setText(("OK - " if reachable else "FEHLER - ") + msg)
         prev = self.model_combo.currentText()
         self.model_combo.clear()
         if models:
@@ -578,7 +556,7 @@ class MainWindow(QMainWindow):
             tasks=self.tasks,
             sys_info=self.sys_info,
         )
-        self._thread = QThread(self)
+        self._thread = QThread()
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.log.connect(self.on_log)
@@ -588,8 +566,18 @@ class MainWindow(QMainWindow):
         self._worker.finished.connect(self._thread.quit)
         self._worker.finished.connect(self._worker.deleteLater)
         self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.finished.connect(self._clear_threads)
         self._set_state(self.RUNNING)
         self._thread.start()
+
+    def _clear_threads(self):
+        # Wird an thread.finished gehaengt: jetzt ist die Worker-Emission sicher vorbei
+        # UND der Thread wirklich beendet. ERST jetzt die Python-Referenzen loesen (sonst
+        # GC mitten in der Emission -> "malloc(): unaligned fastbin") und ERST jetzt zurueck
+        # auf IDLE (sonst koennte ein neuer Lauf den noch lebenden Thread ueberschreiben).
+        self._worker = None
+        self._thread = None
+        self._set_state(self.IDLE)
 
     def on_cancel(self):
         if self._worker is not None and isinstance(self._worker, BenchWorker):
@@ -629,17 +617,19 @@ class MainWindow(QMainWindow):
 
     @Slot(bool, str, object)
     def on_finished(self, ok, msg, payload):
-        self._thread = None
-        self._worker = None
+        # Weder Worker/Thread nullen noch den Zustand auf IDLE setzen -- die Signal-
+        # Emission laeuft noch und der Thread ist noch nicht beendet. Beides passiert
+        # sicher in _clear_threads (nach thread.finished); sonst koennte ein neuer Lauf
+        # starten, waehrend der alte Thread noch lebt ("QThread destroyed while running").
         self._last_payload = payload if payload else None
-        self._set_state(self.IDLE)
         self.statusBar().showMessage(f"Benchmark {msg}.")
         self._show_placement(payload)
-        # Warnen, wenn gar keine Messwerte entstanden (echter Ausfall) -- aber nicht
-        # bei bewusstem Abbruch ohne Ergebnisse.
+        # Warnen, wenn gar keine Messwerte entstanden (echter Ausfall) -- aber nicht bei
+        # bewusstem Abbruch. Modal erst NACH der Emission zeigen (kein nested Event-Loop).
         rows = payload.get("rows") if payload else None
         if not rows and msg != "abgebrochen":
-            QMessageBox.warning(self, "Kein Ergebnis", msg or "Unbekannter Fehler")
+            QTimer.singleShot(0, lambda m=msg: QMessageBox.warning(
+                self, "Kein Ergebnis", m or "Unbekannter Fehler"))
 
     def _show_placement(self, payload):
         """Zeigt die tatsaechliche GPU/CPU-Verteilung unter der Tabelle an."""
@@ -754,9 +744,8 @@ class MainWindow(QMainWindow):
 
     # ---- Sauberes Beenden ----
     def closeEvent(self, event):
-        # Laufenden Worker kooperativ stoppen (BenchWorker: Flag + offene Antwort
-        # schliessen). ScanWorker hat kein request_cancel -> wird durch den kurzen
-        # Netzwerk-Timeout (6 s) ohnehin begrenzt.
+        # Laufenden Benchmark-Worker kooperativ stoppen (Flag + offene HTTP-Antwort
+        # schliessen). Der Scan laeuft synchron, hat also keinen eigenen Thread.
         if self._worker is not None and hasattr(self._worker, "request_cancel"):
             self._worker.request_cancel()
         th = self._thread
