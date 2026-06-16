@@ -14,7 +14,12 @@ benutzt **dieselbe Mess-Logik** wie das CLI — die Zahlen sind identisch.
 - **Abbrechen** jederzeit (kooperativ, reagiert auch mitten in der Generierung).
 - **Ergebnistabelle** je Task (TTFT, Prefill, Decode, Decode p95, Qualitaet) plus
   eine fette **GESAMT**-Zeile ueber alle Tasks.
+- **Tatsaechliche GPU/CPU-Verteilung** nach dem Lauf (aus Ollama `/api/ps`): zeigt,
+  ob das Modell komplett auf GPU/CPU lief oder hybrid (z. B. „85% GPU / 15% CPU").
+- **„Aufgaben & Infos"**-Button: erklaert die Kennzahlen/Begriffe und zeigt alle
+  Aufgaben inkl. vollem Prompt-Inhalt.
 - **Export** als CSV, Markdown oder JSON (CSV/MD sind byte-identisch zum CLI).
+- Eigenes **App-Icon** (`assets/icon.png`, generierbar via `assets/make_icon.py`).
 
 > Voraussetzung: ein laufendes **Ollama**. Es wird bewusst **nicht** mitgebuendelt
 > (Go-Binary + mehrere GB Modelle). Die App ist „standalone" im Sinne von

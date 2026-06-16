@@ -15,6 +15,7 @@ Die eigentliche Messung kommt unveraendert aus bench.py (gleiche Zahlen wie das 
 Laeuft auf Windows, macOS und Linux; mit PyInstaller als Standalone baubar
 (siehe BenchGUI.spec / packaging/).
 """
+import html
 import json
 import os
 import platform
@@ -23,11 +24,12 @@ import threading
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, QThread, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
-    QProgressBar, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
+    QPlainTextEdit, QProgressBar, QPushButton, QSpinBox, QTableWidget,
+    QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 import bench  # Mess-Logik (run_once, agg, installed_models, system_info, _write_*, ...)
@@ -270,6 +272,9 @@ class BenchWorker(QObject):
                 sum_rows.append(gesamt)
                 self.task_row.emit(gesamt)
 
+            # Tatsaechliche GPU/CPU-Verteilung des geladenen Modells abfragen.
+            placement = self._placement(model) if sum_rows else {"gpu_pct": None}
+
             # ok nur, wenn nicht abgebrochen UND tatsaechlich Messwerte entstanden.
             ok = (not cancelled) and bool(sum_rows)
             if cancelled:
@@ -282,15 +287,37 @@ class BenchWorker(QObject):
                 "rows": sum_rows,
                 "sys_info": self.sys_info,
                 "label": self.label,
+                "placement": placement,
                 "config": {
                     "model": model, "mode": mode, "reps": reps, "warmup": warmup,
                     "tasks": [t["id"] for t in tasks], "ollama": self.host,
-                    "aborted": cancelled,
+                    "aborted": cancelled, "gpu_pct": placement.get("gpu_pct"),
                 },
             }
             self.finished.emit(ok, msg, payload)
         except Exception as e:  # pragma: no cover - defensiv
             self.finished.emit(False, f"Fehler: {e}", {})
+
+    def _placement(self, model):
+        """Tatsaechliche GPU/CPU-Verteilung des geladenen Modells via Ollama /api/ps.
+
+        Liefert {gpu_pct, vram_mb, total_mb}. gpu_pct = Anteil des Modells im VRAM
+        (100 = komplett GPU, 0 = komplett CPU, dazwischen = Hybrid). None, wenn
+        nicht ermittelbar (Modell schon entladen o. ae.).
+        """
+        try:
+            data = bench.http_json("/api/ps", timeout=5)
+            for m in data.get("models", []):
+                if model in (m.get("name"), m.get("model")):
+                    total = m.get("size", 0) or 0
+                    vram = m.get("size_vram", 0) or 0
+                    pct = round(100 * vram / total) if total else None
+                    return {"gpu_pct": pct,
+                            "vram_mb": round(vram / 1e6) if total else None,
+                            "total_mb": round(total / 1e6) if total else None}
+        except Exception:
+            pass
+        return {"gpu_pct": None, "vram_mb": None, "total_mb": None}
 
     def _emit_progress(self, done, total, tid, ti, tt, rep, rep_total):
         self.progress.emit({
@@ -306,7 +333,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Lokaler LLM-Benchmark (Ollama)")
-        self.resize(820, 720)
+        self.resize(820, 760)
+        _icon = QIcon(resource_path(os.path.join("assets", "icon.png")))
+        if not _icon.isNull():
+            self.setWindowIcon(_icon)
 
         self._thread = None
         self._worker = None
@@ -341,8 +371,14 @@ class MainWindow(QMainWindow):
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Ollama-Host:"))
         self.host_edit = QLineEdit(os.environ.get("OLLAMA_HOST", "http://localhost:11434"))
+        self.host_edit.setToolTip(
+            "Adresse, unter der Ollama laeuft und die Modelle bereitstellt.\n"
+            "Eigener Rechner: http://localhost:11434\n"
+            "Anderer Rechner im Netz (misst DESSEN Hardware): http://<ip>:11434")
         row1.addWidget(self.host_edit, 1)
         self.scan_btn = QPushButton("Modelle suchen")
+        self.scan_btn.setToolTip("Prueft, ob Ollama erreichbar ist, und fuellt das Dropdown\n"
+                                 "mit den dort installierten Modellen.")
         self.scan_btn.clicked.connect(self.on_scan)
         row1.addWidget(self.scan_btn)
         conn.addLayout(row1)
@@ -355,26 +391,45 @@ class MainWindow(QMainWindow):
         form = QFormLayout(par_box)
         self.model_combo = QComboBox()
         self.model_combo.setMinimumWidth(260)
+        self.model_combo.setToolTip("Eines der in Ollama installierten Modelle "
+                                    "(per \"Modelle suchen\" geladen).")
         form.addRow("Modell:", self.model_combo)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["gpu", "cpu"])
+        self.mode_combo.setToolTip(
+            "Wo gerechnet wird (Vorgabe an Ollama):\n"
+            "gpu = GPU nutzen; passt das Modell nicht in den VRAM, wird ein Teil\n"
+            "      automatisch auf die CPU ausgelagert (Hybrid).\n"
+            "cpu = erzwingt reine CPU (ohne Grafikkarte).\n"
+            "Die tatsaechliche GPU/CPU-Verteilung wird nach dem Lauf angezeigt.")
         form.addRow("Modus:", self.mode_combo)
         self.reps_spin = QSpinBox()
         self.reps_spin.setRange(1, 50)
         self.reps_spin.setValue(int(self._cfg.get("reps", 5)) if hasattr(self, "_cfg") else 5)
+        self.reps_spin.setToolTip("Anzahl gewerteter Messungen pro Aufgabe.\n"
+                                  "Mehr = stabiler (Median + p95 statt Zufallswert).")
         form.addRow("Wiederholungen:", self.reps_spin)
         self.warmup_spin = QSpinBox()
         self.warmup_spin.setRange(0, 5)
         self.warmup_spin.setValue(int(self._cfg.get("warmup", 1)) if hasattr(self, "_cfg") else 1)
+        self.warmup_spin.setToolTip("Nicht gewertete Vorlaeufe, die das Modell laden.\n"
+                                    "Der Kaltstart ist viel langsamer und wuerde sonst die Messung verfaelschen.")
         form.addRow("Warmup:", self.warmup_spin)
         self.label_edit = QLineEdit(platform.node() or "rechner")
+        self.label_edit.setToolTip("Nur ein Etikett fuer die Ergebnisse/Exportdateien -\n"
+                                   "praktisch beim Vergleich mehrerer Geraete (z. B. laptop-i9, mac-m4).")
         form.addRow("Label (Maschinenname):", self.label_edit)
 
         btn_row = QHBoxLayout()
+        self.info_btn = QPushButton("Aufgaben & Infos")
+        self.info_btn.setToolTip("Zeigt, welche Aufgaben getestet werden (inkl. Prompt-Inhalt)\n"
+                                 "und was gemessen wird.")
+        self.info_btn.clicked.connect(self.show_tasks_info)
         self.start_btn = QPushButton("Test starten")
         self.start_btn.clicked.connect(self.on_start)
         self.cancel_btn = QPushButton("Abbrechen")
         self.cancel_btn.clicked.connect(self.on_cancel)
+        btn_row.addWidget(self.info_btn)
         btn_row.addStretch(1)
         btn_row.addWidget(self.start_btn)
         btn_row.addWidget(self.cancel_btn)
@@ -406,6 +461,12 @@ class MainWindow(QMainWindow):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         res.addWidget(self.table)
+
+        self.placement_label = QLabel("")
+        self.placement_label.setToolTip("Tatsaechliche GPU/CPU-Verteilung des Modells "
+                                        "waehrend des Laufs (aus Ollama /api/ps).")
+        self.placement_label.setStyleSheet("color: #2b6; font-weight: bold;")
+        res.addWidget(self.placement_label)
 
         exp_row = QHBoxLayout()
         exp_row.addStretch(1)
@@ -504,6 +565,7 @@ class MainWindow(QMainWindow):
         self.log_view.clear()
         self.prog_bar.setValue(0)
         self.prog_label.setText("-")
+        self.placement_label.setText("")
         self._last_payload = None
 
         self._worker = BenchWorker(
@@ -572,11 +634,31 @@ class MainWindow(QMainWindow):
         self._last_payload = payload if payload else None
         self._set_state(self.IDLE)
         self.statusBar().showMessage(f"Benchmark {msg}.")
+        self._show_placement(payload)
         # Warnen, wenn gar keine Messwerte entstanden (echter Ausfall) -- aber nicht
         # bei bewusstem Abbruch ohne Ergebnisse.
         rows = payload.get("rows") if payload else None
         if not rows and msg != "abgebrochen":
             QMessageBox.warning(self, "Kein Ergebnis", msg or "Unbekannter Fehler")
+
+    def _show_placement(self, payload):
+        """Zeigt die tatsaechliche GPU/CPU-Verteilung unter der Tabelle an."""
+        pl = payload.get("placement") if payload else None
+        cfg = payload.get("config") if payload else {}
+        if not pl or pl.get("gpu_pct") is None:
+            self.placement_label.setText("")
+            return
+        gp = pl["gpu_pct"]
+        if gp >= 99:
+            wo = "komplett auf der GPU"
+        elif gp <= 1:
+            wo = "komplett auf der CPU"
+        else:
+            wo = f"hybrid: {gp}% GPU / {100 - gp}% CPU"
+        extra = (f" - {pl['vram_mb']} von {pl['total_mb']} MB im VRAM"
+                 if pl.get("total_mb") else "")
+        self.placement_label.setText(
+            f"Modell lief {wo} (Modus '{cfg.get('mode', '?')}'){extra}")
 
     # ---- Export ----
     def on_export(self, fmt):
@@ -613,6 +695,63 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Export fehlgeschlagen", str(e))
 
+    # ---- Aufgaben & Infos ----
+    def show_tasks_info(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Aufgaben & Infos")
+        dlg.resize(740, 620)
+        lay = QVBoxLayout(dlg)
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(False)
+        browser.setHtml(self._tasks_info_html())
+        lay.addWidget(browser)
+        bb = QDialogButtonBox(QDialogButtonBox.Close)
+        bb.rejected.connect(dlg.reject)
+        bb.accepted.connect(dlg.accept)
+        lay.addWidget(bb)
+        dlg.exec()
+
+    def _tasks_info_html(self):
+        def esc(s):
+            return html.escape(str(s))
+
+        p = ["<h2>Was misst dieser Benchmark?</h2><ul>"
+             "<li><b>Prefill</b> (t/s): Tempo beim Verarbeiten der Eingabe "
+             "(rechenlastig, wichtig bei langen Texten).</li>"
+             "<li><b>Decode</b> (t/s): Tempo beim Erzeugen der Antwort "
+             "(bandbreitenlastig - hier trennen sich GPU und Mac).</li>"
+             "<li><b>TTFT</b> (ms): Zeit bis zum ersten Token - die gefuehlte Reaktionszeit.</li>"
+             "<li><b>Qualitaet</b>: deterministischer Stichprobentest "
+             "(nur bei Aufgaben mit pruefbarer Antwort).</li></ul>"
+             "<h3>Begriffe</h3><ul>"
+             "<li><b>Modus gpu</b>: Ollama nutzt die GPU automatisch; passt das Modell nicht "
+             "in den VRAM, wird ein Teil auf die CPU ausgelagert (Hybrid). "
+             "<b>Modus cpu</b>: erzwingt reine CPU.</li>"
+             "<li><b>Warmup</b>: nicht gewerteter Vorlauf, der das Modell laedt "
+             "(Kaltstart ist viel langsamer).</li>"
+             "<li><b>Wiederholungen</b>: mehrere Messungen -> stabiler Median + p95.</li>"
+             "<li>Nach dem Lauf wird die <b>tatsaechliche GPU/CPU-Verteilung</b> angezeigt.</li>"
+             "</ul>"]
+        p.append(f"<h2>Aufgaben ({len(self.tasks)})</h2>")
+        if not self.tasks:
+            p.append("<p><i>Keine Aufgaben geladen (tasks.json fehlt?).</i></p>")
+        for t in self.tasks:
+            if "check_keys" in t:
+                qc = "JSON-Schluessel: " + ", ".join(t["check_keys"])
+            elif "expect_contains" in t:
+                qc = f'Antwort muss enthalten: "{t["expect_contains"]}"'
+            else:
+                qc = "keine (reine Tempo-Messung)"
+            p.append(f"<h3>{esc(t.get('id'))}</h3>")
+            p.append(f"<p><i>{esc(t.get('beschreibung', ''))}</i></p>")
+            p.append(f"<p>Kontext: {t.get('num_ctx', 4096)} Tokens &middot; "
+                     f"max. Ausgabe: {t.get('num_predict', 256)} Tokens &middot; "
+                     f"Qualitaetspruefung: {esc(qc)}</p>")
+            p.append("<p><b>Prompt:</b></p>"
+                     "<pre style='white-space:pre-wrap; background:#f4f4f4; "
+                     f"padding:8px; border-radius:6px;'>{esc(t.get('prompt', ''))}</pre>")
+        return "".join(p)
+
     # ---- Sauberes Beenden ----
     def closeEvent(self, event):
         # Laufenden Worker kooperativ stoppen (BenchWorker: Flag + offene Antwort
@@ -643,6 +782,9 @@ def main():
         return
     app = QApplication(sys.argv)
     app.setApplicationName("LLM-Benchmark")
+    _icon = QIcon(resource_path(os.path.join("assets", "icon.png")))
+    if not _icon.isNull():
+        app.setWindowIcon(_icon)
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

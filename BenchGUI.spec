@@ -18,7 +18,7 @@ a = Analysis(
     ['benchmark_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('tasks.json', '.')],
+    datas=[('tasks.json', '.'), ('assets/icon.png', 'assets')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -49,7 +49,7 @@ exe = EXE(
     target_arch=None,         # macOS-Universal: 'universal2' (braucht universal2-Wheels)
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='assets/icon.ico',   # Windows-/EXE-Icon (auf Linux ignoriert)
 )
 coll = COLLECT(
     exe,
