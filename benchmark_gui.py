@@ -20,7 +20,7 @@ import threading
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QByteArray, QRectF, Qt, QTimer, QObject, QThread, Signal, Slot
-from PySide6.QtGui import QAction, QColor, QPainter
+from PySide6.QtGui import QAction, QColor, QFont, QPainter
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame,
@@ -505,7 +505,20 @@ class MainWindow(QMainWindow):
                    ("Gesamtdauer (s)", "dauer", 0, "niedriger = besser · ganzer Lauf"),
                    ("GPU-Anteil (%)", "gpu_pct", 0, "Anteil des Modells im VRAM")]
     CMP_COLS = ["Modell", "Modus", "Label", "Decode", "Prefill", "TTFT", "Dec p95",
-                "GPU%", "Qual", "Kaltstart", "Größe (MB)", "Dauer (s)"]
+                "GPU%", "Qual", "Kaltstart", "Größe (GB)", "Dauer (s)"]
+    # Pro Wert-Spalte: (rec-Schlüssel zum Vergleichen, höher_ist_besser, Tooltip-Hinweis).
+    # Der beste Wert je Spalte wird unter den lokalen Läufen hervorgehoben.
+    CMP_BEST = {
+        3:  ("decode",     True,  "höher = besser"),
+        4:  ("prefill",    True,  "höher = besser"),
+        5:  ("ttft",       False, "niedriger = besser"),
+        6:  ("decode_p95", True,  "höher = besser · Konsistenz"),
+        7:  ("gpu_pct",    True,  "höher = mehr im VRAM"),
+        8:  ("qual_pct",   True,  "höher = besser"),
+        9:  ("kaltstart",  False, "niedriger = besser · Modell-Ladezeit"),
+        10: ("groesse",    False, "kleiner = passt eher in den VRAM"),
+        11: ("dauer",      False, "niedriger = besser · ganzer Lauf"),
+    }
 
     def __init__(self):
         super().__init__()
@@ -762,24 +775,42 @@ class MainWindow(QMainWindow):
                                 "Tempo ca. (Anbieter-Server, nicht deine Hardware); Qualität gemessen.")
         self.ref_btn.clicked.connect(self.on_toggle_reference)
         top.addWidget(self.ref_btn)
+        self.import_btn = QPushButton("📥 Lauf laden")
+        self.import_btn.setToolTip("Exportierte JSON-Ergebnisse (auch von anderen Rechnern) "
+                                   "laden und in den Vergleich aufnehmen.")
+        self.import_btn.clicked.connect(self.on_import_runs)
+        top.addWidget(self.import_btn)
         self.clear_runs_btn = QPushButton("Läufe zurücksetzen")
         self.clear_runs_btn.clicked.connect(self.on_clear_runs)
         top.addWidget(self.clear_runs_btn)
         lay.addLayout(top)
 
-        self.cmp_view = SvgView(minh=180)
-        lay.addWidget(self.cmp_view, 1)
+        # Diagramm und Tabelle in einen verstellbaren Splitter – so kann die Tabelle
+        # größer gezogen werden, um alle Läufe ohne Scrollen zu sehen.
+        cmp_split = QSplitter(Qt.Vertical)
+        self.cmp_view = SvgView(minh=140)
+        cmp_split.addWidget(self.cmp_view)
         self.cmp_table = QTableWidget(0, len(self.CMP_COLS))
         self.cmp_table.setHorizontalHeaderLabels(self.CMP_COLS)
+        for c, (_k, _hi, _hint) in self.CMP_BEST.items():
+            hdr = self.cmp_table.horizontalHeaderItem(c)
+            if hdr:
+                hdr.setToolTip(_hint)
         self.cmp_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         for i in range(1, len(self.CMP_COLS)):
             self.cmp_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
         self.cmp_table.verticalHeader().setVisible(False)
         self.cmp_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.cmp_table.setMinimumHeight(120)
-        lay.addWidget(self.cmp_table)
+        cmp_split.addWidget(self.cmp_table)
+        cmp_split.setStretchFactor(0, 1)
+        cmp_split.setStretchFactor(1, 1)
+        cmp_split.setSizes([240, 320])
+        lay.addWidget(cmp_split, 1)
         note = QLabel("☁ = Cloud-Referenz (Tempo ca., nicht auf deiner Hardware gemessen, "
-                      "Qualität gemessen). Starte mehrere Modelle, um lokale Läufe zu sammeln.")
+                      "Qualität gemessen). ⚠ = Messung wahrscheinlich fehlerhaft "
+                      "(zählt nicht beim Bestwert; Maus drüber für Details). "
+                      "Grün/fett = bester Wert. Starte mehrere Modelle, um Läufe zu sammeln.")
         note.setWordWrap(True)
         note.setStyleSheet(f"color:{TXT2};font-size:9pt;")
         lay.addWidget(note)
@@ -1019,10 +1050,15 @@ class MainWindow(QMainWindow):
         cfg = payload.get("config", {})
         cold = payload.get("cold_start_ms")
         pl = payload.get("placement", {}) or {}
+        imported = bool(payload.get("imported"))
+        label = payload.get("label", "")
+        model = cfg.get("model", "?")
+        # Hinter dem @ steht das Label (Rechner) – besser zuordenbar als gpu/cpu.
+        name = f"{model} @ {label}" if label else f"{model} @ {cfg.get('mode', '?')}"
         rec = {
-            "name": f"{cfg.get('model', '?')} @ {cfg.get('mode', '?')}",
+            "name": name,
             "model": cfg.get("model", "?"), "mode": cfg.get("mode", "?"),
-            "label": payload.get("label", ""),
+            "label": label,
             "decode": _num(g.get("decode_toks_med")),
             "prefill": _num(g.get("prefill_toks_med")),
             "ttft": _num(g.get("ttft_ms_med")),
@@ -1034,10 +1070,47 @@ class MainWindow(QMainWindow):
             "groesse": pl.get("total_mb"),
             "dauer": payload.get("total_wall_s"),
             "is_reference": False,
+            "imported": imported,
         }
         self._runs.append(rec)
         self.tabs.setTabText(1, f"Vergleich ({len(self._runs)})")
         self._refresh_compare()
+
+    def on_import_runs(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Ergebnisse laden", default_output_dir(), "JSON (*.json)")
+        if not paths:
+            return
+        added, errors = 0, []
+        for path in paths:
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                if not data.get("rows"):
+                    raise ValueError("keine Messdaten (rows) enthalten")
+                # JSON-Export in ein _add_run-Payload überführen. Ältere Exporte ohne
+                # placement/cold_start_ms/total_wall_s laden trotzdem (Werte dann „–“).
+                payload = {
+                    "rows": data["rows"],
+                    "config": data.get("config", {}),
+                    "label": data.get("label", os.path.splitext(os.path.basename(path))[0]),
+                    "placement": data.get("placement", {}) or {},
+                    "cold_start_ms": data.get("cold_start_ms"),
+                    "total_wall_s": data.get("total_wall_s"),
+                    "imported": True,
+                }
+                before = len(self._runs)
+                self._add_run(payload)
+                if len(self._runs) > before:
+                    added += 1
+            except Exception as e:
+                errors.append(f"{os.path.basename(path)}: {e}")
+        if added:
+            self.clear_runs_btn.setEnabled(True)
+            self.statusBar().showMessage(f"{added} Lauf/Läufe geladen.")
+        if errors:
+            QMessageBox.warning(self, "Teilweise nicht geladen",
+                                "Konnte nicht laden:\n" + "\n".join(errors))
 
     def on_clear_runs(self):
         if not self._runs:
@@ -1080,6 +1153,24 @@ class MainWindow(QMainWindow):
             })
         return out
 
+    @staticmethod
+    def _run_warning(rec):
+        """Gibt einen Hinweistext zurück, wenn die Messung wahrscheinlich fehlerhaft ist,
+        sonst None. Referenzwerte werden nie als fehlerhaft markiert."""
+        if rec.get("is_reference"):
+            return None
+        reasons = []
+        q = rec.get("qual_pct")
+        if q is not None and q == 0:
+            reasons.append("Qualität 0 % – keine der prüfbaren Aufgaben bestanden")
+        g = rec.get("gpu_pct")
+        dec = rec.get("decode")
+        if g == 0 and dec is not None and dec > 40:
+            reasons.append("0 % GPU bei hohem Decode-Tempo – Platzierung/Messung unplausibel")
+        if not reasons:
+            return None
+        return "Messung wahrscheinlich fehlerhaft – bitte wiederholen.\n• " + "\n• ".join(reasons)
+
     def _refresh_compare(self):
         name, key, dec, hint = self.CMP_METRICS[self.cmp_combo.currentIndex()]
         items = []
@@ -1088,28 +1179,55 @@ class MainWindow(QMainWindow):
             if v is None:
                 continue
             col = CYAN if rec.get("is_reference") else SC.CYCLE[i % len(SC.CYCLE)]
-            items.append((rec["name"], float(v), col))
+            nm = ("⚠ " + rec["name"]) if self._run_warning(rec) else rec["name"]
+            items.append((nm, float(v), col))
         cap = f"Modell-Vergleich – {name}"
         self.cmp_view.set_gen(lambda w, h: SC.compare(items, dec, hint, cap, w, h))
         # Tabelle
         self.cmp_table.setRowCount(0)
+        # Bester Wert je Kennzahl-Spalte – nur lokale Läufe (Cloud-Referenz ist Zielwert,
+        # kein Konkurrent). Nur markieren, wenn mind. zwei Läufe vergleichbar sind.
+        # Fehlerhafte Läufe nehmen NICHT am Bestwert-Vergleich teil (sonst „gewinnt"
+        # eine kaputte Messung).
+        local = [rec for rec in self._runs
+                 if not rec.get("is_reference") and not self._run_warning(rec)]
+        best = {}
+        for c, (key, higher, _hint) in self.CMP_BEST.items():
+            nums = [_num(rec.get(key)) for rec in local]
+            nums = [v for v in nums if v is not None]
+            if len(nums) >= 2:
+                best[c] = max(nums) if higher else min(nums)
         for rec in self._runs:
             r = self.cmp_table.rowCount()
             self.cmp_table.insertRow(r)
-            vals = [rec["model"], rec["mode"], rec.get("label", ""),
+            warn = self._run_warning(rec)
+            model_cell = ("⚠ " + rec["model"]) if warn else rec["model"]
+            vals = [model_cell, rec["mode"], rec.get("label", ""),
                     _fmt(rec.get("decode"), 1), _fmt(rec.get("prefill"), 0),
                     _fmt(rec.get("ttft"), 0), _fmt(rec.get("decode_p95"), 1),
                     (f"{rec['gpu_pct']}%" if rec.get("gpu_pct") is not None else "–"),
                     rec.get("quality") or "–",
-                    _fmt(rec.get("kaltstart"), 1), _fmt(rec.get("groesse"), 0),
+                    _fmt(rec.get("kaltstart"), 1),
+                    _fmt(rec.get("groesse") / 1000 if rec.get("groesse") is not None else None, 1),
                     _fmt(rec.get("dauer"), 0)]
             ref = rec.get("is_reference")
             for c, val in enumerate(vals):
                 item = QTableWidgetItem(str(val))
                 if c >= 3:
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                if ref:
+                if warn:
+                    item.setForeground(QColor(AMBER))
+                    item.setToolTip(warn)
+                elif ref:
                     item.setForeground(QColor(CYAN))
+                elif c in best:
+                    v = _num(rec.get(self.CMP_BEST[c][0]))
+                    if v is not None and abs(v - best[c]) < 1e-9:
+                        item.setForeground(QColor(GREEN))
+                        f = item.font()
+                        f.setBold(True)
+                        item.setFont(f)
+                        item.setToolTip("bester Wert (" + self.CMP_BEST[c][2] + ")")
                 self.cmp_table.setItem(r, c, item)
 
     # ---- Export ----
@@ -1136,6 +1254,9 @@ class MainWindow(QMainWindow):
                 obj = {"schema_version": 1, "label": lab,
                        "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                        "system": info, "config": self._last_payload.get("config", {}),
+                       "placement": self._last_payload.get("placement", {}),
+                       "cold_start_ms": self._last_payload.get("cold_start_ms"),
+                       "total_wall_s": self._last_payload.get("total_wall_s"),
                        "rows": rows}
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(obj, f, ensure_ascii=False, indent=2)
