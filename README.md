@@ -50,11 +50,12 @@ darüber sitzt ein modernes **PySide6-Dashboard** im Tokyo-Night-Stil.
 | | Feature | Worum es geht |
 |---|---|---|
 | **1** | **Schickes Dashboard** | KPI-Kacheln, Ringdiagramm (GPU/CPU-Verteilung) und Balken pro Lauf – als gestochen scharfe SVG-Grafiken. |
-| **2** | **Modelle vergleichen** | Mehrere Modelle in einer Sitzung testen und im Reiter *Vergleich* nebeneinanderstellen – nach Decode, Prefill, TTFT, p95, Qualität, Kaltstart, Speicher, Dauer. |
-| **3** | **Cloud-Referenz** | Auf Knopfdruck Claude **Opus/Sonnet/Haiku** als Richtwert einblenden – damit du siehst, *wie weit du weg bist*. Ohne API-Key, ohne Kosten. |
-| **4** | **Tatsächliche GPU/CPU-Verteilung** | Der Ring zeigt, wie viel des Modells real im VRAM lag (z. B. *85 % GPU / 15 % CPU*). |
-| **5** | **Warmup sichtbar** | Der Kaltstart (Modell-Ladezeit) erscheint als eigener Balken – man sieht sofort, wie viel langsamer der erste Lauf ist. |
-| **6** | **Standalone & lokal** | Reine stdlib-Messung, ein Doppelklick-Programm baubar (Win/macOS/Linux). Ollama bleibt die einzige externe Voraussetzung. |
+| **2** | **Modelle vergleichen** | Mehrere Modelle in einer Sitzung testen und im Reiter *Vergleich* nebeneinanderstellen – nach Decode, Prefill, TTFT, p95, Qualität, Kaltstart, Speicher, Dauer. Der **beste Wert je Kennzahl** ist grün/fett hervorgehoben (richtungsabhängig); unplausible Messungen werden mit ⚠ markiert und zählen nicht beim Bestwert. |
+| **3** | **Läufe importieren** | Exportierte JSON-Ergebnisse – auch **von anderen Rechnern** – per *Lauf laden* in den Vergleich aufnehmen. So stehen GPU-PC, Mac und CPU-Server direkt nebeneinander. |
+| **4** | **Cloud-Referenz** | Auf Knopfdruck Claude **Opus/Sonnet/Haiku** als Richtwert einblenden – damit du siehst, *wie weit du weg bist*. Ohne API-Key, ohne Kosten. |
+| **5** | **Tatsächliche GPU/CPU-Verteilung** | Der Ring zeigt, wie viel des Modells real im VRAM lag (z. B. *85 % GPU / 15 % CPU*). |
+| **6** | **Warmup sichtbar** | Der Kaltstart (Modell-Ladezeit) erscheint als eigener Balken – man sieht sofort, wie viel langsamer der erste Lauf ist. |
+| **7** | **Standalone & lokal** | Reine stdlib-Messung, ein Doppelklick-Programm baubar (Win/macOS/Linux). Ollama bleibt die einzige externe Voraussetzung. |
 
 ## 📊 Das Dashboard
 
@@ -67,7 +68,9 @@ mit Durchschnittslinie. Der orange Balken ganz links ist der **Warmup** (Kaltsta
 ## 🆚 Modelle vergleichen + Cloud-Referenz
 
 Starte mehrere Tests hintereinander (verschiedene Modelle/Modi) – im Reiter **Vergleich**
-stehen sie nebeneinander. Die Kennzahl ist umschaltbar; per Knopfdruck blendest du die
+stehen sie nebeneinander. Die Kennzahl ist umschaltbar; der **beste Wert je Spalte** ist
+grün/fett markiert (höher *oder* niedriger = besser, je nach Kennzahl). Per **Lauf laden**
+holst du exportierte Ergebnisse anderer Rechner dazu, per Knopfdruck blendest du die
 **Cloud-Referenz** (Claude Opus/Sonnet/Haiku, in Cyan) ein.
 
 ![Vergleich + Cloud-Referenz](assets/screenshots/vergleich.png)
@@ -75,6 +78,7 @@ stehen sie nebeneinander. Die Kennzahl ist umschaltbar; per Knopfdruck blendest 
 > ☁ **Cloud-Referenz:** Qualität echt gemessen (an den zwei prüfbaren Aufgaben, je 100 %);
 > Tempo als **Richtwert** der Anbieter-Server – *nicht* auf deiner Hardware gemessen.
 > Werte stehen in [`reference_cloud.json`](reference_cloud.json) und sind anpassbar.
+> ⚠ markiert eine wahrscheinlich fehlerhafte Messung (z. B. Qualität 0 %); sie zählt nicht beim Bestwert.
 
 ## 🏗️ Wie es funktioniert
 
@@ -128,7 +132,7 @@ Volltext der Prompts: im Programm unter **Hilfe → Aufgaben** oder in [`tasks.j
 | **Decode p95** | nahe Worst-Case – wie gleichmäßig schnell? |
 | **Qualität** (%) | deterministischer Stichprobentest |
 | **Kaltstart** (s) | Modell-Ladezeit (erster Lauf) |
-| **Speicherbedarf** (MB) | Modellgröße – „passt es in den VRAM?" |
+| **Speicherbedarf** (GB) | Modellgröße – „passt es in den VRAM?" |
 | **Gesamtdauer** (s) | wie lange der ganze Lauf dauert |
 | **GPU-Anteil** (%) | wie viel des Modells real im VRAM lag |
 
@@ -201,6 +205,7 @@ Details: [`docs/04-gui.md`](docs/04-gui.md). Ollama muss zur Laufzeit laufen.
 | `tasks.json` | Modell-Liste + 5 Büro-Aufgaben |
 | `reference_cloud.json` | Cloud-Referenz (Opus/Sonnet/Haiku) |
 | `BenchGUI.spec` · `packaging/` | Standalone-Build |
+| `tools/make_screenshots.py` | README-Screenshots reproduzierbar aus der GUI rendern |
 | `tests/` | Unit-Tests (`python -m unittest discover -s tests`) |
 | `docs/01–04` | Konzept · Recherche · Status · GUI/Bauen |
 

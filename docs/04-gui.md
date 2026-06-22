@@ -5,6 +5,8 @@ benutzt **dieselbe Mess-Logik** wie das CLI — die Zahlen sind identisch.
 
 Dark-Dashboard im Tokyo-Night-Stil; die Diagramme sind SVG (`svgcharts.py`), per
 `QSvgRenderer` als scharfes Bild gerendert. Screenshots: siehe `assets/screenshots/`.
+Diese werden reproduzierbar aus der echten GUI erzeugt (Demo-Daten, offscreen):
+`./.venv/bin/python tools/make_screenshots.py` – nach GUI-Änderungen einmal laufen lassen.
 
 ## Was die GUI kann
 - **Ollama-Host** eingeben (Standard `http://localhost:11434`, auch Rechner im Netz).
@@ -19,8 +21,12 @@ Dark-Dashboard im Tokyo-Night-Stil; die Diagramme sind SVG (`svgcharts.py`), per
 - Reiter **„Vergleich":** mehrere Laeufe verschiedener Modelle in EINER Sitzung
   sammeln und gegenueberstellen (Balken + Tabelle). Kennzahl umschaltbar:
   Decode, Prefill, TTFT, **Decode p95, Qualitaet, Kaltstart, Speicherbedarf,
-  Gesamtdauer**, GPU-Anteil. **„Cloud-Referenz"**-Knopf blendet Claude
-  Opus/Sonnet/Haiku als Richtwert ein (aus `reference_cloud.json`).
+  Gesamtdauer**, GPU-Anteil. Der **beste Wert je Spalte** wird grün/fett markiert
+  (richtungsabhaengig); **⚠**-Laeufe (z. B. Qualitaet 0 %) gelten als fehlerhaft und
+  zaehlen nicht beim Bestwert. Die Groesse steht in **GB**. **„Lauf laden"** importiert
+  exportierte JSON-Ergebnisse (auch von anderen Rechnern) in den Vergleich.
+  **„Cloud-Referenz"**-Knopf blendet Claude Opus/Sonnet/Haiku als Richtwert ein
+  (aus `reference_cloud.json`).
 - **Hilfe-Menue** (oben): Bedienung, Begriffe, Aufgaben (inkl. vollem Prompt),
   Lizenz, Ueber.
 - **Export** als CSV, Markdown oder JSON (CSV/MD byte-identisch zum CLI).

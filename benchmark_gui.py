@@ -501,7 +501,7 @@ class MainWindow(QMainWindow):
                    ("Decode p95 (t/s)", "decode_p95", 1, "höher = besser · Konsistenz"),
                    ("Qualität (%)", "qual_pct", 0, "höher = besser"),
                    ("Kaltstart (s)", "kaltstart", 1, "niedriger = besser · Modell-Ladezeit"),
-                   ("Speicherbedarf (MB)", "groesse", 0, "kleiner = passt eher in den VRAM"),
+                   ("Speicherbedarf (GB)", "groesse", 1, "kleiner = passt eher in den VRAM"),
                    ("Gesamtdauer (s)", "dauer", 0, "niedriger = besser · ganzer Lauf"),
                    ("GPU-Anteil (%)", "gpu_pct", 0, "Anteil des Modells im VRAM")]
     CMP_COLS = ["Modell", "Modus", "Label", "Decode", "Prefill", "TTFT", "Dec p95",
@@ -1178,6 +1178,8 @@ class MainWindow(QMainWindow):
             v = rec.get(key)
             if v is None:
                 continue
+            if key == "groesse":
+                v = v / 1000  # in der Tabelle wie im Diagramm in GB anzeigen
             col = CYAN if rec.get("is_reference") else SC.CYCLE[i % len(SC.CYCLE)]
             nm = ("⚠ " + rec["name"]) if self._run_warning(rec) else rec["name"]
             items.append((nm, float(v), col))
