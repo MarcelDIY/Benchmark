@@ -14,6 +14,13 @@
 
 block_cipher = None
 
+# App-Version aus benchmark_gui.py lesen (eine Quelle der Wahrheit), ohne das Modul
+# zu importieren (PySide6 zur Spec-Eval-Zeit vermeiden). SPECPATH = Ordner der Spec.
+import os as _os
+import re as _re
+with open(_os.path.join(SPECPATH, 'benchmark_gui.py'), encoding='utf-8') as _f:
+    APP_VERSION = _re.search(r'^VERSION\s*=\s*["\']([^"\']+)', _f.read(), _re.M).group(1)
+
 a = Analysis(
     ['benchmark_gui.py'],
     pathex=[],
@@ -67,4 +74,10 @@ app = BUNDLE(
     name='BenchGUI.app',      # nur auf macOS wirksam
     icon=None,
     bundle_identifier='com.marcel.benchgui',
+    # Version ins Info.plist schreiben, damit "Über diese App" auf dem Mac die
+    # richtige Version zeigt (sonst meldet das Bundle 0.0.0).
+    info_plist={
+        'CFBundleShortVersionString': APP_VERSION,
+        'CFBundleVersion': APP_VERSION,
+    },
 )
