@@ -139,7 +139,37 @@ Volltext der Prompts: im Programm unter **Hilfe → Aufgaben** oder in [`tasks.j
 Fair gemessen: `temperature 0`, fester Seed, feste Kontextlänge, **Median + p95** über mehrere
 Läufe, Warmup, Cache-Buster für echte Prefill-Messung.
 
-## 🚀 Schnellstart
+## 📥 Installation (fertiges Programm – ohne Python)
+
+**Für alle, die es einfach ausprobieren wollen.** Du lädst ein fertiges
+Doppelklick-Programm – keine Installation, keine Programmierkenntnisse nötig.
+👉 **Ausführliche Schritt-für-Schritt-Anleitung mit Bildern der Sicherheitswarnungen:
+[`docs/05-installation.md`](docs/05-installation.md).**
+
+**① Ollama installieren** (führt die KI-Modelle aus – ohne läuft nichts):
+[ollama.com/download](https://ollama.com/download) installieren, starten und ein
+Modell laden:
+
+```bash
+ollama pull llama3.2:3b      # kleines, schnelles Einsteigermodell (~2 GB)
+```
+
+**② Benchmark laden** – auf der [**Release-Seite**](../../releases/latest) unter
+*Assets* die **eine** Datei für dein System:
+
+| System | Datei | Starten |
+|---|---|---|
+| **Windows** 10/11 | `BenchGUI-windows-x64.zip` | ZIP entpacken → Ordner `BenchGUI` → `BenchGUI.exe`. SmartScreen: *Weitere Informationen → Trotzdem ausführen*. |
+| **Mac** (Apple M1–M4) | `BenchGUI-macos-arm64.tar.gz` | Doppelklick entpackt `BenchGUI.app` → **Rechtsklick → Öffnen** (einmalig, da unsigniert). |
+| **Mac** (Intel) | `BenchGUI-macos-x64.tar.gz` | wie oben. *(Welcher Mac?  → „Über diesen Mac".)* |
+| **Linux** 64-Bit | `BenchGUI-linux-x64.tar.gz` | `tar -xzf …` → `./BenchGUI/BenchGUI`. Ggf. `libgl1 libxcb-cursor0` nachinstallieren. |
+
+**③ Im Programm:** *Modelle suchen → Modell wählen → Test starten*.
+
+> 💡 Klappt „Modelle suchen" nicht? Dann läuft Ollama nicht oder hat kein Modell –
+> prüfe <http://localhost:11434> und lade ein Modell (Schritt ①).
+
+## 🚀 Schnellstart (aus dem Quellcode)
 
 **Voraussetzung:** [Ollama](https://ollama.com/download) installiert und gestartet, plus Python 3.9+.
 
@@ -179,6 +209,10 @@ Ergebnisse landen in `results/` als `summary_*.md|csv` und `raw_*.csv`.
 
 Ein Doppelklick-Programm ohne installiertes Python.
 
+**Du willst es nur benutzen?** Dann nichts selbst bauen – lade ein fertiges Paket:
+siehe [**Installation**](#-installation-fertiges-programm--ohne-python) bzw.
+[`docs/05-installation.md`](docs/05-installation.md).
+
 **Fertige Binaries:** unter [**Releases**](../../releases) für **Windows, macOS (Intel + Apple Silicon) und Linux** –
 automatisch von [GitHub Actions](.github/workflows/build.yml) gebaut. Ein Tag-Push (`v1.0`) erzeugt sie alle.
 
@@ -207,7 +241,7 @@ Details: [`docs/04-gui.md`](docs/04-gui.md). Ollama muss zur Laufzeit laufen.
 | `BenchGUI.spec` · `packaging/` | Standalone-Build |
 | `tools/make_screenshots.py` | README-Screenshots reproduzierbar aus der GUI rendern |
 | `tests/` | Unit-Tests (`python -m unittest discover -s tests`) |
-| `docs/01–04` | Konzept · Recherche · Status · GUI/Bauen |
+| `docs/01–05` | Konzept · Recherche · Status · GUI/Bauen · Installation |
 
 ## 📄 Lizenz
 
