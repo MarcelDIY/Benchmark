@@ -26,19 +26,34 @@ Bandbreite (nicht Rechenleistung) bestimmt das Decode-Tempo.
   ~1.400–1.650 € (5070 Ti) … ~1.900–2.100 € (4080 SUPER).
 
 ## Apple Silicon (Unified Memory)
-| Chip-Klasse | Bandbreite | Decode 7–8B Q4 | Decode 70B Q4 |
-|---|---|---|---|
-| M-Base | 68–120 GB/s | 25–33 t/s | – |
-| M-Pro | 150–273 GB/s | 38–48 t/s | – |
-| M-Max | 300–546 GB/s | 52–59 t/s | 11–12,5 t/s |
-| M-Ultra | 800–819 GB/s | – | 14–18 t/s |
+*Fortgeschrieben 2026-11-06 (Rudi-Recherche, belegt). Quelle Tempo: llama.cpp Discussion #4167,
+Llama 2 7B Q4_0, Metal; Bandbreiten laut Apple-Datenblättern. Vergleich: RTX 3090 = 100 %.*
 
-- Nutzbarer „VRAM" ≈ 75 % des RAM (per `sysctl iogpu.wired_limit_mb` erhöhbar).
+| Chip | Bandbreite | Decode t/s | Decode vs. 3090 | Prefill vs. 3090 | RAM-Stufen |
+|---|---|---|---|---|---|
+| M1 Max | 400 GB/s | 61 | ~39 % | ~10 % | 32/64 GB |
+| M2 Max | 400 GB/s | 66 | ~42 % | ~13 % | 32/64/96 GB |
+| M4 Pro | 273 GB/s | 51 | ~32 % | ~8 % | 24/48 GB |
+| M4 Max (40 GPU) | 546 GB/s | 83 | ~52 % | ~17 % | ab 36 GB |
+| M5 Pro | 307 GB/s | 66 | ~42 % | ~31 % | 24/48/64 GB |
+| M5 Max (40 GPU) | 614 GB/s | 120 | ~76 % | ~58 % | |
+| M6 (Basis) | 153/170 GB/s | – | – | – | max. 32 GB; Marktstart 2026-11-06, noch kein Pro/Max |
+
+- Decode hängt an der Bandbreite, Prefill an der Rechenleistung. Die Neural Accelerators der
+  M5-Generation heben Prefill um ~3,6–4×, Decode nur um ~1,2–1,4×.
+- Bild/Video (Stable Diffusion u. ä.): Mac ~2–7× hinter einer RTX 4090, z. B. SDXL 42 s (M4 Max)
+  gegen 11 s (4090). **Dünn belegt** (Forum/Blog).
+- Nutzbarer „VRAM" ≈ 75 % des RAM (per `sudo sysctl iogpu.wired_limit_mb` erhöhbar; ob SIP
+  dabei stört, ist offen). 32 GB → ~24 GB für die GPU.
 - RAM-Bedarf @ Q4: 24 GB → 14B, 36 GB → 32B, 64 GB → 70B (~42,5 GB).
 - **MLX** schlägt llama.cpp-Metal bei < 14B um 20–87 %; bei 27B+ kaum noch. **Ollama**
   ist auf dem Mac ~50 % langsamer als MLX → für „Bestcase" MLX nutzen, für faire
   Cross-Plattform-Basis Ollama.
-- Preise DE: Mac mini M4 Pro 48 GB ~1.799–1.999 €; Mac Studio M4 Max 36 GB ~1.999–2.199 €.
+- Docker auf macOS hat **keinen GPU-Zugriff** → lokale Modelle nativ betreiben.
+- Gebrauchtpreise DE (Kleinanzeigen, Stand 2026-11-06, MacBook Pro): M1 Max 32 GB 1.049–1.699 €,
+  M2 Max 32 GB 1.550–2.300 €, M4 Pro 24 GB 1.649–2.599 € / 48 GB 2.450–2.999 €,
+  M4 Max 36 GB 2.500–3.150 €. Refurbished: M5 Pro ab 2.649 €, M5 Max ab 4.069 €.
+  Neupreise nicht erhoben.
 
 ## Modelle & Quantisierung
 **Q4_K_M** ist der Sweet-Spot: ~75 % kleiner als FP16, minimaler Qualitätsverlust.
