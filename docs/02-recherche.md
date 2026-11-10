@@ -55,6 +55,21 @@ Llama 2 7B Q4_0, Metal; Bandbreiten laut Apple-Datenblättern. Vergleich: RTX 30
   M4 Max 36 GB 2.500–3.150 €. Refurbished: M5 Pro ab 2.649 €, M5 Max ab 4.069 €.
   Neupreise nicht erhoben.
 
+### Anforderung „Sprechende Crew“ (Stand 2026-11-10)
+Marcel will, dass die Crew auf jedem Rechner **gleich klingt**: Qwen3-TTS-Stimmklon wie am Arbeits-PC,
+keine Piper-Ersatzstimmen. Damit ist das ein Kaufkriterium für den Laptop.
+- **Gemessen:** Arbeits-PC (RTX 1000 Ada, 6 GB): Modell `Qwen3-TTS-12Hz-0.6B-Base`, erster Ton nach
+  ~1,1 s, braucht ~2,6 GB Grafikspeicher, mit Whisper large-v3-turbo zusammen 5,2 GB. Kubuntu
+  (GTX 1050 Ti, 4 GB): 2,7-mal langsamer als Echtzeit, Speicher am Limit, also **unbrauchbar**.
+  Messung 2026-11-10.
+- **Mac, ungeprüft:** Der Arbeits-PC nutzt `faster-qwen3-tts`, und das baut auf CUDA-Graphen. Auf
+  dem Mac läuft es deshalb **nicht**. Bleiben das Original `qwen-tts` über PyTorch-MPS oder ein
+  MLX-Port, und für beide fehlt ein Beleg zu Tempo und Klangtreue. Vor dem Kauf eine Probe auf einem
+  Mac machen: Stimmdateien `_Uebergabe/Sprechende_Crew/stimmen/qwen/*.wav` und Messskript
+  `tts/qwen_probe.py`. Der Pfad zur Stimmdatei und `device="cuda"` müssen für den Mac angepasst werden. Maßstab ist echtzeitfähig mit erstem Ton nach höchstens ~2 s.
+- Diktat (Whisper) läuft auf dem Mac nativ (whisper.cpp/MLX). Das ist allgemein bekannt, hier aber
+  nicht selbst gemessen.
+
 ## Modelle & Quantisierung
 **Q4_K_M** ist der Sweet-Spot: ~75 % kleiner als FP16, minimaler Qualitätsverlust.
 GGUF-Größen (≈, je nach Uploader):
