@@ -63,6 +63,15 @@ oder eine geliehene/gemietete 16-GB-GPU kommen.
 Einordnung: ~9–14 t/s Decode = CPU/hybrid-limitiert (nur 6 GB GPU). Genau diese Art
 Zahl liefert am Ende den Plattform-Vergleich.
 
+## Fremdmessungen (aus den Mails, Thread „KI Modellvergleich“, Juni 2026)
+- **Ralf Moog, 26.06.** (`results/summary_RM-UBuPM_20260626T182912Z.md` + `screenshot_RM-UBuPM_20260626.png`):
+  Windows 11, Ryzen 7 7730U, 15 GB RAM, nur CPU. Decode `llama3.2:3b` 8,8 t/s, `qwen2.5:7b` 4,3,
+  `qwen2.5:14b` 2,0, Qualität jeweils 100 %. `gemma4:e4b` und `qwen3.5:9b` sind als fehlerhaft markiert (Qualität 0 %).
+  Die Summary-Datei enthält nur den letzten gemma4-Lauf, die vollständigen Werte stehen im Screenshot.
+- **Werner, 23.06.:** Er hat einen Mac Mini M4 16 GB getestet, aber nur eingebettete Bilder geschickt, keine Ergebnisdatei.
+  Den MacStudio M1 Pro 32 GB hat er ohne Daten abgebrochen. **Mac-Werte fehlen also noch: bei Werner neu anfragen.**
+- Zum großen Rechner (Punkt 2) steht in den Mails nichts.
+
 ## Offene Punkte (für die Fortsetzung)
 1. **Modell-Liste / Aufgaben bestätigen** — passt `tasks.json`, oder etwas rein/raus?
    Vorschlag: vorhandene Modelle (`llama3.1:8b`, `gemma3:4b/12b`) als Basis nutzen.
