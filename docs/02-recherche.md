@@ -53,7 +53,10 @@ Llama 2 7B Q4_0, Metal; Bandbreiten laut Apple-Datenblättern. Vergleich: RTX 30
 - Gebrauchtpreise DE (Kleinanzeigen, Stand 2026-11-06, MacBook Pro): M1 Max 32 GB 1.049–1.699 €,
   M2 Max 32 GB 1.550–2.300 €, M4 Pro 24 GB 1.649–2.599 € / 48 GB 2.450–2.999 €,
   M4 Max 36 GB 2.500–3.150 €. Refurbished: M5 Pro ab 2.649 €, M5 Max ab 4.069 €.
-  Neupreise nicht erhoben.
+- Neupreise DE (Stand 2026-11-13, Jenni, Händler-Suchtreffer, nicht gegen Apple-Store geprüft):
+  MacBook Pro 14" **M6 (Basis) 32 GB/1 TB** Mactrade 2.689 € (UVP 2.739 €); USA-Liste $2.399.
+  **M5 Pro 48 GB/1 TB** ca. 3.180–3.450 € (15/16-Core ab ~3.181 €, 18/20-Core ab ~3.446 €, Geizhals/billiger.de).
+  M6 Pro/Max noch nicht erschienen.
 
 ### Anforderung „Sprechende Crew“ (Stand 2026-11-10)
 Marcel will, dass die Crew auf jedem Rechner **gleich klingt**: Qwen3-TTS-Stimmklon wie am Arbeits-PC,
@@ -69,6 +72,47 @@ keine Piper-Ersatzstimmen. Damit ist das ein Kaufkriterium für den Laptop.
   `tts/qwen_probe.py`. Der Pfad zur Stimmdatei und `device="cuda"` müssen für den Mac angepasst werden. Maßstab ist echtzeitfähig mit erstem Ton nach höchstens ~2 s.
 - Diktat (Whisper) läuft auf dem Mac nativ (whisper.cpp/MLX). Das ist allgemein bekannt, hier aber
   nicht selbst gemessen.
+
+### Laptop-Auswahl für später (Stand 2026-11-20, Gespräch Marcel/Jenni)
+**Festgelegt:** Es muss ein **Laptop** sein, so klein und leicht wie möglich (mobil, Arbeit bei
+Kunden). Lokale Sprachmodelle sind die Arbeiter, Claude online der Orchestrator. Video bleibt auf
+HS- oder Cloud-Hardware. Kaufzeitpunkt offen („wenn ich mal Geld verdiene“) → dann Modelle und
+Preise frisch prüfen.
+
+**Faustregel:** Tempo ≈ Bandbreite ÷ Modellgröße (praktisch 60–80 % davon). Die Speichergröße
+macht nicht schneller, sie entscheidet nur, welches Modell hineinpasst.
+
+**Bauarten im Vergleich** *(Werte aus dem Gedächtnis, nicht geprüft, außer wo die Apple-Tabelle oben belegt)*
+
+| Gerät / Bauart | Speicher | davon fürs Modell (ca.) | Bandbreite (ca.) | Obergrenze 8B (5 GB) | größtes sinnvolles Modell |
+|---|---|---|---|---|---|
+| Kubuntu: GTX 1050 Ti | 4 GB VRAM | ~3,5 GB | 112 GB/s | passt nicht ganz | 3B |
+| Normaler Laptop (z. B. HP OmniBook Ultra, Windows) | 32 GB gemeinsam | ~16 GB (Windows gibt der iGPU die Hälfte) | ~120–150 GB/s | ~25–30 t/s | 14B |
+| MacBook Air M4 | 16–32 GB gemeinsam | bei 32 GB ~21–24 GB | 120 GB/s | ~24 t/s | 14B |
+| MacBook Pro M4/M5 Pro | 24–64 GB gemeinsam | ~75 % des RAM | 273 / 307 GB/s | ~55–60 t/s | 30B |
+| MacBook Pro M4/M5 Max | 36–128 GB gemeinsam | bis ~96 GB | 546 / 614 GB/s | ~110–120 t/s | 70B |
+| AMD Strix Halo (Ryzen AI Max+ 395, z. B. HP ZBook Ultra G1a) | bis 128 GB gemeinsam | bis ~96 GB | ~256 GB/s | ~50 t/s | 70B (langsam) |
+| Laptop mit RTX 4090 / 5090 | 16 / 24 GB VRAM | ~15 / ~22 GB | ~575 / ~900 GB/s | ~115 / ~180 t/s | 14B / 30B |
+| *Desktop RTX 4090 / 5090* | 24 / 32 GB VRAM | ~22 / ~30 GB | ~1.000 / ~1.800 GB/s | ~200 / ~350 t/s | 30B |
+
+**Auswahl unter „Laptop, leicht, Sprachmodelle“** *(Gewichte aus dem Gedächtnis, nicht geprüft)*
+
+| Option | Gewicht (ca.) | Urteil |
+|---|---|---|
+| MacBook Air | ~1,2 kg | leicht, aber ohne Lüfter: bremst bei langen Läufen, max. 32 GB, 120 GB/s → scheidet aus |
+| **MacBook Pro 14" Max-Chip** | ~1,6 kg | **stärkste Kombination aus klein und schnell** |
+| MacBook Pro 14" Pro-Chip | ~1,6 kg | Kompromiss: halbe Bandbreite, deutlich günstiger (M5 Pro 48 GB ~3.200–3.450 €, s. o.) |
+| AMD Strix Halo 14" (z. B. ZBook Ultra G1a) | ~1,5 kg | Windows-Alternative: gleich viel Speicher, halbe Bandbreite eines Max |
+| Gaming-Laptop mit RTX | 2,2–3 kg | schnell, aber schwer, laut, wenig Speicher → scheidet aus |
+
+**Video & Bild** sind etwas anderes: Sie hängen an der **Rechenleistung**, nicht an der
+Bandbreite, und die Werkzeuge sind auf NVIDIA/CUDA gebaut. Auf dem Mac laufen sie (ComfyUI über
+PyTorch-MPS, teils MLX-Ports), aber deutlich langsamer (Bild ~2–7× hinter einer 4090, s. o.) und
+nicht jedes Werkzeug startet überhaupt (CUDA-only-Beschleuniger, gleiches Problem wie
+`faster-qwen3-tts`). Für Video-Modelle bleibt deshalb NVIDIA-Hardware (HS-KI-Server) oder Cloud-GPU.
+
+**Vorteil lokal beim Kunden:** Rohdaten bleiben auf dem Gerät, Claude bekommt nur Aufträge und
+Ergebnisse. Im Einzelfall vertraglich regeln.
 
 ## Modelle & Quantisierung
 **Q4_K_M** ist der Sweet-Spot: ~75 % kleiner als FP16, minimaler Qualitätsverlust.
